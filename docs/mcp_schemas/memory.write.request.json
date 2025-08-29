@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "address",
+    "value"
+  ],
+  "properties": {
+    "address": { "type": "integer", "minimum": 0, "maximum": 65535 },
+    "value": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "bytes": {
+      "type": "integer",
+      "enum": [
+        1,
+        2
+      ],
+      "default": 1
+    }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Debug Breakpoints Response",
+  "type": "object",
+  "required": ["operationResult"],
+  "properties": {
+    "breakpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "address"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique breakpoint identifier"
+          },
+          "address": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Memory address of the breakpoint"
+          },
+          "hitCount": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of times this breakpoint has been hit"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether this breakpoint is active"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when breakpoint was created"
+          }
+        }
+      },
+      "description": "Current list of all breakpoints"
+    },
+    "operationResult": {
+      "type": "object",
+      "required": ["action", "success"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["set", "list", "remove"],
+          "description": "The operation that was performed"
+        },
+        "success": {
+          "type": "boolean",
+          "description": "Whether the operation succeeded"
+        },
+        "id": {
+          "type": "string",
+          "description": "Breakpoint ID (returned by set operation)"
+        },
+        "address": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Address involved in the operation"
+        },
+        "removed": {
+          "type": "boolean",
+          "description": "Whether remove operation actually removed a breakpoint"
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if operation failed"
+        }
+      }
+    }
+  }
+}

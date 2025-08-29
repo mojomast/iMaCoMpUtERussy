@@ -5,14 +5,23 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
     "test": "node tests/run-tests.js",
     "test:cpu": "node tests/cpu*.test.js",
     "test:memory": "node tests/memory*.test.js",
     "test:assembler": "node tests/assembler*.test.js",
     "test:integration": "node tests/integration*.test.js",
-    "start": "node server.js",
-    "dev": "node server.js",
-    "docs": "echo 'Documentation available in docs/ directory'",
+    "test:all": "npm test && npm run integration-tests",
+    "mcp-server": "node server/mcp_server.js",
+    "queue-server": "node server/queue-server.js",
+    "autonomous-agent": "node agent/autonomous-agent.js",
+    "autonomous-system-start": "concurrently 'npm run mcp-server' 'npm run queue-server' 'npm run autonomous-agent'",
+    "integration-tests": "npm run --prefix integration test",
+    "docs": "npm run docs:serve",
+    "docs:serve": "mkdir -p docs && python -m http.server 8003 -d docs",
+    "setup": "npm install",
+    "build": "npm run setup",
     "samples": "echo 'Sample programs available in samples/ directory'"
   },
   "repository": {
@@ -34,5 +43,13 @@
     "retro",
     "education",
     "imacomputerussy"
-  ]
+  ],
+  "dependencies": {
+    "express": "^4.18.2",
+    "ajv": "^8.12.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "supertest": "^6.3.3"
+  }
 }

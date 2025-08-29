@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "name",
+    "source"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Program name without .asm extension",
+      "pattern": "^[a-zA-Z0-9_\\-]+((\\.asm)?)?$"
+    },
+    "source": {
+      "type": "string",
+      "description": "Assembly source code to save",
+      "maxLength": 65536
+    },
+    "overwrite": {
+      "type": "boolean",
+      "description": "Whether to overwrite existing program",
+      "default": false
+    }
+  }
+}

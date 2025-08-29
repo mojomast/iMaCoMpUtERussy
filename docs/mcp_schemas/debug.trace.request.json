@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Debug Trace Request",
+  "type": "object",
+  "properties": {
+    "steps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000,
+      "description": "Number of steps to trace, defaults to 100 if not specified"
+    },
+    "until": {
+      "type": "string",
+      "enum": ["halt", "breakpoint"],
+      "description": "Trace until specific condition is met"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Debug Breakpoints Request",
+  "type": "object",
+  "required": ["action"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["set", "list", "remove"],
+      "description": "Breakpoint operation to perform"
+    },
+    "address": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Address for set/remove operations"
+    },
+    "id": {
+      "type": "string",
+      "description": "Breakpoint ID for remove operations"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "action": { "const": "set" } }
+      },
+      "then": {
+        "required": ["address"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "action": { "const": "remove" } }
+      },
+      "then": {
+        "anyOf": [
+          { "required": ["address"] },
+          { "required": ["id"] }
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

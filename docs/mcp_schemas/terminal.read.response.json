@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "string"
+        },
+        "bytesRead": {
+          "type": "integer"
+        },
+        "hasInput": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

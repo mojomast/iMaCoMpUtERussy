@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "bytecode",
+    "startAddress"
+  ],
+  "properties": {
+    "bytecode": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      }
+    },
+    "startAddress": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "validate": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

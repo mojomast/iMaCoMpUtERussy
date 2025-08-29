@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "sampleName"
+  ],
+  "properties": {
+    "sampleName": {
+      "type": "string",
+      "enum": [
+        "hello-world",
+        "echo",
+        "fibonacci",
+        "graphics-demo",
+        "video-demo",
+        "hello-terminal"
+      ]
+    },
+    "assembled": {
+      "type": "boolean",
+      "default": true
+    },
+    "resetCPU": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

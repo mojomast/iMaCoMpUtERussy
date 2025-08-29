@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "bytecode": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "hexBytes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "instructionCount": {
+          "type": "integer"
+        },
+        "sizeBytes": {
+          "type": "integer"
+        },
+        "program": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "address": {
+                "type": "integer"
+              },
+              "machineCode": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "size": {
+                "type": "integer"
+              },
+              "source": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

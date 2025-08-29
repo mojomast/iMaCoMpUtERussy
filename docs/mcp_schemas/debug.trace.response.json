@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Debug Trace Response",
+  "type": "object",
+  "properties": {
+    "stepsExecuted": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of steps actually executed before halting"
+    },
+    "halted": {
+      "type": "boolean",
+      "description": "Whether the CPU halted during execution"
+    },
+    "haltReason": {
+      "type": "string",
+      "enum": ["breakpoint_hit", "cpu_halted", "max_steps_reached"],
+      "description": "Reason for halting if halted is true"
+    },
+    "trace": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pc", "opcode", "instruction"],
+        "properties": {
+          "pc": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Program counter at this step"
+          },
+          "opcode": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255,
+            "description": "Opcode byte value"
+          },
+          "operands": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "description": "Operand bytes for the instruction"
+          },
+          "instruction": {
+            "type": "string",
+            "description": "Human-readable instruction disassembly"
+          },
+          "registers": {
+            "type": "object",
+            "properties": {
+              "a": { "type": "integer", "minimum": 0, "maximum": 255 },
+              "x": { "type": "integer", "minimum": 0, "maximum": 255 },
+              "y": { "type": "integer", "minimum": 0, "maximum": 255 }
+            },
+            "description": "Register state after executing this instruction"
+          },
+          "flags": {
+            "type": "object",
+            "properties": {
+              "carry": { "type": "boolean" },
+              "zero": { "type": "boolean" },
+              "interrupt": { "type": "boolean" },
+              "decimal": { "type": "boolean" },
+              "overflow": { "type": "boolean" },
+              "negative": { "type": "boolean" }
+            },
+            "description": "CPU flags state after executing this instruction"
+          },
+          "cycles": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "CPU cycles consumed by this instruction"
+          }
+        }
+      },
+      "description": "Array of trace entries for each executed instruction"
+    }
+  },
+  "required": ["trace"]
+}

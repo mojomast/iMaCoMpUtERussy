@@ -1,0 +1,41 @@
+{
+  "name": "mcp-integration-tests",
+  "version": "1.0.0",
+  "description": "Comprehensive integration tests for MCP Server and Autonomous Agent",
+  "type": "module",
+  "main": "agent-mcp-integration.js",
+  "scripts": {
+    "test": "node agent-mcp-integration.js",
+    "test:ci": "node -e \"import('./agent-mcp-integration.js').then(m => m.runInCIMode(m.testSuite))\"",
+    "test:debug": "DEBUG_TESTS=true node agent-mcp-integration.js",
+    "test:perf": "node -e \"import('./agent-mcp-integration.js').then(m => m.benchmarkMCPServer())\"",
+    "test:client": "node -e \"import('./agent-mcp-integration.js').then(m => m.testMCPClientIntegration())\"",
+    "test:agent": "node -e \"import('./agent-mcp-integration.js').then(m => m.testCodeGenerationWorkflow())\"",
+    "test:debugging": "node -e \"import('./agent-mcp-integration.js').then(m => m.testDebuggingWorkflow())\"",
+    "health": "node -e \"import('./agent-mcp-integration.js').then(m => m.monitorMCPIntegration())\"",
+    "report": "node -e \"import('./agent-mcp-integration.js').then(m => m.collectIntegrationMetrics())\"",
+    "junit": "node -e \"import('./agent-mcp-integration.js').then(m => m.runTestsWithReport())\"",
+    "profile": "node -e \"import('./test-utils.js').then(u => u.performanceMonitor.generateReport())\""
+  },
+  "keywords": [
+    "integration-tests",
+    "mcp",
+    "ai-agent",
+    "assembly",
+    "6502",
+    "testing"
+  ],
+  "author": "Kyle Durepos (via Roo Code)",
+  "license": "MIT",
+  "dependencies": {
+    "supertest": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "agent-mcp-integration.js",
+    "test-utils.js",
+    "README.md"
+  ]
+}

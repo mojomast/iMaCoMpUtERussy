@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "programSize": {
+          "type": "integer"
+        },
+        "stepsExecuted": {
+          "type": "integer"
+        },
+        "finalState": {
+          "type": "object",
+          "properties": {
+            "pc": {
+              "type": "integer"
+            },
+            "a": {
+              "type": "integer"
+            },
+            "running": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}

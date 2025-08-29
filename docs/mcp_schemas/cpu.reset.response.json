@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "pc": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "a": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "x": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "y": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "running": { "type": "boolean" },
+        "flags": {
+          "type": "object",
+          "properties": {
+            "carry": { "type": "boolean" },
+            "zero": { "type": "boolean" },
+            "interrupt": { "type": "boolean" },
+            "decimal": { "type": "boolean" },
+            "overflow": { "type": "boolean" },
+            "negative": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

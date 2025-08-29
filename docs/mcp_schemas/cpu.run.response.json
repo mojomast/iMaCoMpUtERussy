@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "stepsExecuted": { "type": "integer" },
+        "totalCycles": { "type": "integer" },
+        "halted": { "type": "boolean" },
+        "finalState": {
+          "type": "object",
+          "properties": {
+            "pc": { "type": "integer" },
+            "a": { "type": "integer" },
+            "x": { "type": "integer" },
+            "y": { "type": "integer" }
+          }
+        },
+        "executionTrace": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "step": { "type": "integer" },
+              "pc": { "type": "integer" },
+              "instruction": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

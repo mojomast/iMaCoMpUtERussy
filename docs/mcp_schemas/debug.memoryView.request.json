@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Debug Memory View Request",
+  "type": "object",
+  "required": ["address", "size"],
+  "properties": {
+    "address": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Memory address to start reading from"
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65536,
+      "description": "Number of bytes to read (max 65536)"
+    }
+  },
+  "additionalProperties": false
+}

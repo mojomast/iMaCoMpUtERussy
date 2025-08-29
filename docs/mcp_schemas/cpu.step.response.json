@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "pc": { "type": "integer" },
+        "instruction": { "type": "string" },
+        "cycles": { "type": "integer" },
+        "halted": { "type": "boolean" },
+        "cpuState": {
+          "type": "object",
+          "properties": {
+            "a": { "type": "integer" },
+            "x": { "type": "integer" },
+            "y": { "type": "integer" },
+            "flags": { "type": "object" }
+          }
+        }
+      }
+    }
+  }
+}

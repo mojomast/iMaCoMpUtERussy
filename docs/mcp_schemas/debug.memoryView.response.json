@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Debug Memory View Response",
+  "type": "object",
+  "required": ["address", "size", "bytes"],
+  "properties": {
+    "address": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Starting memory address"
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65536,
+      "description": "Number of bytes read"
+    },
+    "bytes": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "description": "Bytes as numeric array"
+        },
+        {
+          "type": "string",
+          "description": "Bytes as hex string (0x... format)"
+        },
+        {
+          "type": "string",
+          "description": "Bytes as base64 string"
+        }
+      ],
+      "description": "Memory contents in requested format"
+    },
+    "format": {
+      "type": "string",
+      "enum": ["numeric", "hex", "base64"],
+      "default": "numeric",
+      "description": "Format of the bytes data"
+    },
+    "endAddress": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Ending memory address (address + size - 1)"
+    }
+  }
+}
