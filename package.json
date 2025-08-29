@@ -1,0 +1,38 @@
+{
+  "name": "imacomputerussy",
+  "version": "2.1.0",
+  "description": "iMaCoMpUtERussy - Interactive 8-bit CPU emulator with terminal I/O, video graphics, real-time debugging, and steganography capabilities. Created by Kyle Durepos.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run-tests.js",
+    "test:cpu": "node tests/cpu*.test.js",
+    "test:memory": "node tests/memory*.test.js",
+    "test:assembler": "node tests/assembler*.test.js",
+    "test:integration": "node tests/integration*.test.js",
+    "start": "node server.js",
+    "dev": "node server.js",
+    "docs": "echo 'Documentation available in docs/ directory'",
+    "samples": "echo 'Sample programs available in samples/ directory'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kyledurepos/imacomputerussy"
+  },
+  "license": "MIT",
+  "author": "Kyle Durepos",
+  "keywords": [
+    "emulator",
+    "cpu",
+    "interactive",
+    "terminal",
+    "assembly",
+    "debugging",
+    "steganography",
+    "video",
+    "javascript",
+    "retro",
+    "education",
+    "imacomputerussy"
+  ]
+}

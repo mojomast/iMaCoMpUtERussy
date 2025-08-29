@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iMaCoMpUtERussy - 6502 CPU Emulator</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 10px;
+        }
+        
+        .main-container {
+            display: grid;
+            grid-template-columns: 1.5fr 3fr 1.5fr;
+            gap: 10px;
+            height: calc(100vh - 40px);
+        }
+        
+        .panel {
+            background: #001100;
+            border: 2px solid #00ff00;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background: #003300;
+            padding: 8px;
+            border-bottom: 1px solid #00ff00;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-content {
+            padding: 10px;
+            overflow-y: auto;
+            height: calc(100% - 50px);
+        }
+        
+        #video-canvas {
+            width: 100%;
+            max-width: 320px;
+            height: auto;
+            border: 1px solid #00ff00;
+            background: #000;
+        }
+        
+        button {
+            background: #003300;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 5px 10px;
+            margin: 2px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+        }
+        
+        button:hover {
+            background: #004400;
+        }
+        
+        input, select {
+            background: #001100;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 5px;
+            margin: 10px 0;
+        }
+        
+        #terminal-display {
+            background: #000;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        #terminal-input {
+            width: 70%;
+            background: #001100;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>iMaCoMpUtERussy - 6502 CPU Emulator</h1>
+    
+    <div class="main-container">
+        <!-- Left Panel - Console -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>🖥 Console Output</span>
+            </div>
+            <div class="panel-content">
+                <div id="console-display" style="height: 100%; overflow-y: auto; font-size: 11px;"></div>
+            </div>
+        </div>
+        
+        <!-- Center Panel - Terminal -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>📟 Interactive Terminal</span>
+            </div>
+            <div class="panel-content">
+                <div id="terminal-display"></div>
+                <div style="margin-top: 10px;">
+                    <input type="text" id="terminal-input" placeholder="Type commands here..." />
+                    <button id="send-btn">Send</button>
+                    <button id="clear-terminal-btn">Clear</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Panel - Video Display -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>📺 Video Display</span>
+                <button onclick="updateVideo()">Update</button>
+            </div>
+            <div class="panel-content">
+                <canvas id="video-canvas" width="320" height="240"></canvas>
+                <div style="margin-top: 10px; font-size: 10px;">
+                    Video Buffer: $0200-$05FF (32x24 pixels)
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Controls -->
+    <div class="controls">
+        <button id="step-btn">⏭ Step</button>
+        <button id="reset-btn">🔄 Reset</button>
+        <button id="run-btn">▶ Run/Stop</button>
+        <input type="file" id="asm-file" accept=".asm" style="margin-left: 20px;">
+        <button id="load-btn">Load ASM</button>
+        <select id="sample-select">
+            <option value="">Select Sample...</option>
+            <option value="echo">Echo Test</option>
+            <option value="graphics-demo">Graphics Demo</option>
+            <option value="hello-terminal">Hello Terminal</option>
+        </select>
+        <button id="load-sample-btn">Load Sample</button>
+    </div>
+
+    <script type="module">
+        // Global variables
+        let cpu, memory, assembler;
+        let runInterval = null;
+        
+        // Initialize everything
+        async function initialize() {
+            try {
+                console.log('Starting initialization...');
+                
+                // Import modules
+                const { iMaCoMpUtERussyMemory } = await import('./js/memory.js');
+                const { iMaCoMpUtERussyCPU } = await import('./js/cpu.js');
+                const { iMaCoMpUtERussyAssembler } = await import('./js/assembler.js');
+                
+                // Create instances
+                memory = new iMaCoMpUtERussyMemory();
+                cpu = new iMaCoMpUtERussyCPU({ memory });
+                assembler = new iMaCoMpUtERussyAssembler();
+                
+                console.log('Core components created');
+                
+                // Make globally accessible
+                window.cpu = cpu;
+                window.memory = memory;
+                window.assembler = assembler;
+                
+                // Set up video display
+                window.updateVideo = function() {
+                    const canvas = document.getElementById('video-canvas');
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Clear canvas
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw video buffer
+                    for (let addr = 0x0200; addr <= 0x05FF; addr++) {
+                        const value = memory.readByte(addr);
+                        if (value > 0) {
+                            const offset = addr - 0x0200;
+                            const x = (offset % 32) * 10;
+                            const y = Math.floor(offset / 32) * 10;
+                            
+                            let color = '#00ff00';
+                            switch(value) {
+                                case 1: color = '#00ff00'; break; // Green
+                                case 2: color = '#ffff00'; break; // Yellow
+                                case 3: color = '#ff0000'; break; // Red
+                                case 4: color = '#00ffff'; break; // Cyan
+                                case 5: color = '#ff00ff'; break; // Magenta
+                                default: color = '#ffffff'; break; // White
+                            }
+                            
+                            ctx.fillStyle = color;
+                            ctx.fillRect(x, y, 10, 10);
+                        }
+                    }
+                };
+                
+                // Set test pixels
+                memory.writeByte(0x0200, 1);
+                memory.writeByte(0x021F, 2);
+                memory.writeByte(0x02E0, 3);
+                memory.writeByte(0x02FF, 1);
+                updateVideo();
+                
+                // Set up terminal
+                initializeTerminal();
+                
+                // Set up buttons
+                setupButtons();
+                
+                console.log('Initialization complete!');
+                logToConsole('System initialized and ready');
+                
+            } catch (error) {
+                console.error('Initialization failed:', error);
+            }
+        }
+        
+        function logToConsole(message) {
+            const consoleDisplay = document.getElementById('console-display');
+            if (consoleDisplay) {
+                const timestamp = new Date().toLocaleTimeString();
+                consoleDisplay.innerHTML += `[${timestamp}] ${message}\n`;
+                consoleDisplay.scrollTop = consoleDisplay.scrollHeight;
+            }
+        }
+        
+        function writeToTerminal(text, color = '#ffffff') {
+            const terminalDisplay = document.getElementById('terminal-display');
+            if (terminalDisplay) {
+                const span = document.createElement('span');
+                span.style.color = color;
+                span.textContent = text;
+                terminalDisplay.appendChild(span);
+                terminalDisplay.scrollTop = terminalDisplay.scrollHeight;
+            }
+        }
+        
+        function initializeTerminal() {
+            const terminalInput = document.getElementById('terminal-input');
+            const sendBtn = document.getElementById('send-btn');
+            const clearBtn = document.getElementById('clear-terminal-btn');
+            
+            // Initialize terminal display
+            writeToTerminal('iMaCoMpUtERussy Interactive Terminal\n', '#00ff00');
+            writeToTerminal('Ready for I/O communications...\n\n', '#ffff00');
+            
+            // Send button
+            sendBtn.addEventListener('click', () => {
+                const text = terminalInput.value;
+                if (text) {
+                    writeToTerminal('> ' + text + '\n', '#ffff00');
+                    terminalInput.value = '';
+                    // Here you would send the text to the CPU's I/O system
+                }
+            });
+            
+            // Enter key
+            terminalInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendBtn.click();
+                }
+            });
+            
+            // Clear button
+            clearBtn.addEventListener('click', () => {
+                document.getElementById('terminal-display').innerHTML = '';
+                writeToTerminal('iMaCoMpUtERussy Interactive Terminal\n', '#00ff00');
+                writeToTerminal('Ready for I/O communications...\n\n', '#ffff00');
+            });
+        }
+        
+        function setupButtons() {
+            // Step button
+            document.getElementById('step-btn').addEventListener('click', () => {
+                if (cpu && cpu.running) {
+                    cpu.step();
+                    logToConsole('CPU step executed');
+                } else {
+                    logToConsole('CPU not running - load a program first');
+                }
+            });
+            
+            // Reset button
+            document.getElementById('reset-btn').addEventListener('click', () => {
+                if (runInterval) {
+                    clearInterval(runInterval);
+                    runInterval = null;
+                }
+                if (cpu) {
+                    cpu.reset();
+                    cpu.running = false;
+                    logToConsole('CPU reset');
+                }
+                updateVideo();
+            });
+            
+            // Run button
+            document.getElementById('run-btn').addEventListener('click', () => {
+                if (!cpu) return;
+                
+                if (runInterval) {
+                    clearInterval(runInterval);
+                    runInterval = null;
+                    logToConsole('CPU execution stopped');
+                } else {
+                    cpu.running = true;
+                    runInterval = setInterval(() => {
+                        if (cpu.running) {
+                            cpu.step();
+                            updateVideo();
+                        } else {
+                            clearInterval(runInterval);
+                            runInterval = null;
+                        }
+                    }, 16); // ~60 FPS
+                    logToConsole('CPU execution started');
+                }
+            });
+            
+            // Load sample button
+            document.getElementById('load-sample-btn').addEventListener('click', async () => {
+                const sample = document.getElementById('sample-select').value;
+                if (!sample) return;
+                
+                try {
+                    const response = await fetch(`./samples/${sample}.asm`);
+                    const asmCode = await response.text();
+                    
+                    const result = assembler.assemble(asmCode);
+                    if (result.success) {
+                        // Load into memory
+                        result.bytecode.forEach((byte, index) => {
+                            memory.writeByte(result.startAddress + index, byte);
+                        });
+                        
+                        // Set PC to start address
+                        cpu.PC = result.startAddress;
+                        cpu.running = true;
+                        
+                        logToConsole(`Loaded ${sample}.asm at $${result.startAddress.toString(16).toUpperCase()}`);
+                        updateVideo();
+                    } else {
+                        logToConsole(`Assembly failed: ${result.error}`);
+                    }
+                } catch (error) {
+                    logToConsole(`Failed to load ${sample}: ${error.message}`);
+                }
+            });
+        }
+        
+        // Start initialization when DOM is ready
+        document.addEventListener('DOMContentLoaded', initialize);
+        
+    </script>
+</body>
+</html>

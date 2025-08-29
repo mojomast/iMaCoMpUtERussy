@@ -1,0 +1,510 @@
+/* Component styles for VideoStorage-8 Emulator */
+
+/* Panel collapse functionality */
+.panel.collapsed .panel-content {
+    display: none;
+}
+
+.panel-header {
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle-btn {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+}
+
+/* App container */
+#app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Main layout */
+main {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* Section layout */
+section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Button styles */
+button {
+    padding: 8px 16px;
+    background-color: #333;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #00ff00;
+    color: #000;
+}
+
+/* File loading controls */
+.file-load-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.sample-programs {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+#sample-select {
+    background-color: #000;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    padding: 5px;
+    font-family: 'Courier New', monospace;
+}
+
+#sample-select:focus {
+    outline: none;
+    border-color: #ffff00;
+}
+
+/* Video Manager UI Components */
+
+/* Control Groups */
+.control-group {
+    margin-bottom: 15px;
+    padding: 10px;
+    border: 1px solid #00ff00;
+    background-color: rgba(0, 255, 0, 0.05);
+}
+
+.control-group h3 {
+    margin: 0 0 10px 0;
+    color: #00ff00;
+    font-size: 14px;
+    text-transform: uppercase;
+}
+
+/* Progress Bar */
+.progress-container {
+    margin: 15px 0;
+    padding: 15px;
+    border: 1px solid #00ff00;
+    background-color: rgba(0, 255, 0, 0.05);
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #333;
+    border: 1px solid #00ff00;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: #00ff00;
+    width: 0%;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.progress-text {
+    color: #00ff00;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 5px;
+}
+
+.progress-status {
+    color: #ccc;
+    font-size: 12px;
+    margin-bottom: 10px;
+}
+
+.progress-cancel {
+    background-color: #ff4444;
+    color: white;
+    border: 1px solid #ff4444;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.progress-cancel:hover {
+    background-color: #cc3333;
+}
+
+/* File Info Display */
+.file-info {
+    margin-top: 10px;
+}
+
+.file-item {
+    padding: 5px;
+    margin: 3px 0;
+    background-color: rgba(0, 255, 0, 0.1);
+    border-left: 3px solid #00ff00;
+    font-size: 12px;
+}
+
+.file-item.error {
+    border-left-color: #ff4444;
+    background-color: rgba(255, 68, 68, 0.1);
+    color: #ffaaaa;
+}
+
+/* Capacity Display */
+.capacity-display {
+    margin-top: 10px;
+}
+
+.capacity-item {
+    padding: 5px;
+    margin: 3px 0;
+    background-color: rgba(0, 255, 255, 0.1);
+    border-left: 3px solid #00ffff;
+    font-size: 12px;
+    color: #00ffff;
+}
+
+.capacity-item.error {
+    border-left-color: #ff4444;
+    background-color: rgba(255, 68, 68, 0.1);
+    color: #ffaaaa;
+}
+
+/* Status Display */
+.status-display {
+    margin-top: 15px;
+    padding: 10px;
+    border: 1px solid #00ff00;
+    min-height: 30px;
+    background-color: rgba(0, 255, 0, 0.05);
+}
+
+.status-display.info {
+    border-color: #00ff00;
+    background-color: rgba(0, 255, 0, 0.05);
+    color: #00ff00;
+}
+
+.status-display.success {
+    border-color: #00ff00;
+    background-color: rgba(0, 255, 0, 0.1);
+    color: #00ff00;
+    font-weight: bold;
+}
+
+.status-display.error {
+    border-color: #ff4444;
+    background-color: rgba(255, 68, 68, 0.1);
+    color: #ffaaaa;
+    font-weight: bold;
+}
+
+/* Enhanced Button Styles */
+button {
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 255, 0, 0.3);
+}
+
+button:active {
+    transform: translateY(0);
+}
+
+button.loading {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+button.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border: 2px solid transparent;
+    border-top: 2px solid #00ff00;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+#batch-encode-btn {
+    background-color: #0088ff;
+    border-color: #0088ff;
+    margin-top: 10px;
+}
+
+#batch-encode-btn:hover {
+    background-color: #0066cc;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .control-group {
+        padding: 8px;
+    }
+
+    button {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+
+    .progress-container {
+        padding: 10px;
+    }
+
+    .file-item, .capacity-item {
+        font-size: 11px;
+        padding: 4px;
+    }
+}
+
+/* Animation for success states */
+@keyframes successPulse {
+    0% { box-shadow: 0 0 0 0 rgba(0, 255, 0, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(0, 255, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 255, 0, 0); }
+}
+
+.status-display.success {
+    animation: successPulse 2s;
+}
+
+/* File Input Styling */
+.file-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.file-inputs label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    color: #00ff00;
+}
+
+.file-inputs input[type="file"],
+.file-inputs input[type="text"] {
+    padding: 5px;
+    background-color: #000;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+}
+
+.file-inputs input[type="text"]::placeholder {
+    color: #666;
+}
+
+/* File Load Section for Debugger */
+.file-load-section {
+    margin-bottom: 15px;
+    padding: 10px;
+    border: 1px solid #00ff00;
+    background-color: rgba(0, 255, 0, 0.05);
+}
+
+.file-load-section label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    color: #00ff00;
+    margin-bottom: 10px;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.speed-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #00ff00;
+}
+
+.speed-control input[type="range"] {
+    flex: 1;
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.action-buttons button:disabled {
+    background-color: #333;
+    color: #666;
+    border-color: #666;
+    cursor: not-allowed;
+}
+
+/* Memory Viewer Styling */
+#memory-display {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    background-color: #000;
+    color: #00ff00;
+    padding: 10px;
+    border: 1px solid #00ff00;
+    overflow: auto;
+    max-height: 800px;
+    width: 100%;
+    box-sizing: border-box;
+    white-space: pre;
+    word-wrap: break-word;
+}
+
+/* Debugger Controls */
+#debugger-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+/* Console Output */
+#console-output {
+    background-color: rgba(0, 0, 0, 0.8);
+    border: 1px solid #00ff00;
+    padding: 15px;
+}
+
+#console-display {
+    background-color: #000;
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 10px;
+    height: 200px;
+    overflow-y: auto;
+    border: 1px solid #333;
+    white-space: pre-wrap;
+    line-height: 1.2;
+}
+
+#clear-console-btn {
+    margin-top: 10px;
+    background-color: #333;
+    color: #ffff00;
+    border: 1px solid #ffff00;
+}
+
+#clear-console-btn:hover {
+    background-color: #ffff00;
+    color: #000;
+}
+
+/* Interactive Terminal */
+#interactive-terminal {
+    background-color: rgba(0, 0, 0, 0.9);
+    border: 2px solid #00ff00;
+    padding: 15px;
+}
+
+#terminal-display {
+    background-color: #000;
+    color: #ffffff;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    padding: 15px;
+    height: 300px;
+    overflow-y: auto;
+    border: 2px solid #00ff00;
+    white-space: pre-wrap;
+    line-height: 1.4;
+    margin-bottom: 10px;
+}
+
+#terminal-input-area {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+#terminal-input {
+    flex: 1;
+    background-color: #000;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    padding: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+}
+
+#terminal-input:focus {
+    outline: none;
+    border-color: #ffff00;
+    box-shadow: 0 0 5px #ffff00;
+}
+
+#send-btn, #clear-terminal-btn {
+    background-color: #333;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    padding: 8px 16px;
+}
+
+#send-btn:hover, #clear-terminal-btn:hover {
+    background-color: #00ff00;
+    color: #000;
+}
+
+#terminal-info {
+    color: #888;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+}
+
+/* TODO: Add more detailed component styles - debugger panels, memory viewer, video controls */

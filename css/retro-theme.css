@@ -1,0 +1,25 @@
+/* Retro CRT theme for VideoStorage-8 Emulator */
+
+/* Basic dark background with green text */
+body {
+    background-color: #000;
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+    margin: 0;
+    padding: 20px;
+}
+
+/* TODO: Implement full CRT effects - scanlines, phosphor glow, curvature, flicker */
+
+/* Header styling */
+header h1 {
+    text-align: center;
+    text-shadow: 0 0 10px #00ff00;
+}
+
+/* Section borders */
+section {
+    border: 1px solid #00ff00;
+    padding: 10px;
+    margin-bottom: 20px;
+}

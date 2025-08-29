@@ -1,0 +1,51 @@
+# CI workflow for automated testing of videostorage-8
+# CI Status Badge: ![CI](https://github.com/user/videostorage-8/workflows/CI/badge.svg)
+# Replace 'user' with your GitHub username in the badge URL above
+
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Validate JavaScript syntax
+      run: |
+        find . -name "*.js" -not -path "./node_modules/*" -not -path "./.github/*" | xargs -I {} node --check {}
+
+    - name: Run tests
+      run: npm test
+      env:
+        NODE_ENV: test
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-node-${{ matrix.node-version }}
+        path: |
+          **/test-results.xml
+          **/*.log
+        retention-days: 30

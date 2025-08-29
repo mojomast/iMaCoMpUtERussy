@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VideoStorage-8 Emulator</title>
+    <link rel="stylesheet" href="css/retro-theme.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>VideoStorage-8 Emulator</h1>
+        </header>
+        <main>
+            <section id="debugger">
+                <h2>Debugger</h2>
+                <div id="registers"></div>
+                <div id="debugger-status"></div>
+            </section>
+            <section id="memory-viewer">
+                <h2>Memory Viewer</h2>
+                <div id="memory-display"></div>
+            </section>
+            <section id="video-manager">
+                <h2>Video Manager</h2>
+                <div id="video-controls"></div>
+                <div id="status-display"></div>
+            </section>
+        </main>
+    </div>
+    
+    <!-- Simplified initialization script -->
+    <script type="module">
+        console.log('🚀 Starting VideoStorage-8 Emulator...');
+        
+        // Test if we can load modules first
+        try {
+            console.log('Testing module imports...');
+            
+            const { VideoStorage8CPU } = await import('./js/cpu.js');
+            console.log('✓ CPU module loaded');
+            
+            const { VideoStorage8Memory } = await import('./js/memory.js');
+            console.log('✓ Memory module loaded');
+            
+            const { assemble } = await import('./js/assembler.js');
+            console.log('✓ Assembler module loaded');
+            
+            // Create simple debugger functionality
+            console.log('Creating CPU and Memory...');
+            const memory = new VideoStorage8Memory();
+            const cpu = new VideoStorage8CPU({ memory });
+            console.log('✓ CPU and Memory created');
+            
+            // Create simple UI
+            function createSimpleDebugger() {
+                const debuggerSection = document.getElementById('debugger');
+                const registersDiv = document.getElementById('registers');
+                
+                // Add simple controls
+                const controlsHtml = `
+                    <div style="margin: 10px 0;">
+                        <button id="simple-step">Step</button>
+                        <button id="simple-reset">Reset</button>
+                        <input type="file" id="simple-load" accept=".asm,.txt" style="margin-left: 10px;">
+                    </div>
+                `;
+                debuggerSection.insertAdjacentHTML('beforeend', controlsHtml);
+                
+                // Simple register display
+                function updateRegisters() {
+                    registersDiv.innerHTML = `
+                        <div>PC: ${cpu.PC.toString(16).padStart(4, '0').toUpperCase()}</div>
+                        <div>A: ${cpu.A.toString(16).padStart(2, '0').toUpperCase()}</div>
+                        <div>X: ${cpu.X.toString(16).padStart(2, '0').toUpperCase()}</div>
+                        <div>Y: ${cpu.Y.toString(16).padStart(2, '0').toUpperCase()}</div>
+                        <div>SP: ${cpu.SP.toString(16).padStart(2, '0').toUpperCase()}</div>
+                        <div>P: ${cpu.P.toString(16).padStart(2, '0').toUpperCase()}</div>
+                    `;
+                }
+                
+                // Wire up events
+                document.getElementById('simple-step').addEventListener('click', () => {
+                    cpu.step();
+                    updateRegisters();
+                    console.log('Step executed');
+                });
+                
+                document.getElementById('simple-reset').addEventListener('click', () => {
+                    cpu.reset();
+                    updateRegisters();
+                    console.log('CPU reset');
+                });
+                
+                document.getElementById('simple-load').addEventListener('change', async (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        try {
+                            const content = await file.text();
+                            const assembled = assemble(content);
+                            if (assembled && assembled.bytes) {
+                                memory.loadProgram(assembled.bytes, assembled.origin || 0x0600);
+                                cpu.reset();
+                                cpu.PC = assembled.origin || 0x0600;
+                                updateRegisters();
+                                console.log(`Loaded ${file.name}: ${assembled.bytes.length} bytes`);
+                            }
+                        } catch (error) {
+                            console.error('Load error:', error);
+                        }
+                    }
+                });
+                
+                updateRegisters();
+                console.log('✓ Simple debugger created');
+            }
+            
+            // Create simple memory viewer
+            function createSimpleMemoryViewer() {
+                const memoryDisplay = document.getElementById('memory-display');
+                
+                function updateMemory() {
+                    let html = '<pre style="font-size: 10px;">';
+                    for (let addr = 0x0600; addr < 0x0620; addr += 16) {
+                        html += addr.toString(16).padStart(4, '0').toUpperCase() + ': ';
+                        for (let i = 0; i < 16; i++) {
+                            const byte = memory.readByte(addr + i);
+                            html += byte.toString(16).padStart(2, '0').toUpperCase() + ' ';
+                        }
+                        html += '\n';
+                    }
+                    html += '</pre>';
+                    memoryDisplay.innerHTML = html;
+                }
+                
+                updateMemory();
+                
+                // Update memory every second
+                setInterval(updateMemory, 1000);
+                console.log('✓ Simple memory viewer created');
+            }
+            
+            // Create simple video manager
+            function createSimpleVideoManager() {
+                const videoControls = document.getElementById('video-controls');
+                const statusDisplay = document.getElementById('status-display');
+                
+                videoControls.innerHTML = `
+                    <div style="margin: 10px 0;">
+                        <input type="file" id="asm-input" accept=".asm,.txt" placeholder="Assembly file">
+                        <input type="file" id="video-input" accept="video/*" placeholder="Video file">
+                        <button id="simple-encode" disabled>Simple Encode Test</button>
+                    </div>
+                `;
+                
+                const asmInput = document.getElementById('asm-input');
+                const videoInput = document.getElementById('video-input');
+                const encodeBtn = document.getElementById('simple-encode');
+                
+                function updateButtons() {
+                    encodeBtn.disabled = !asmInput.files.length || !videoInput.files.length;
+                }
+                
+                asmInput.addEventListener('change', updateButtons);
+                videoInput.addEventListener('change', updateButtons);
+                
+                encodeBtn.addEventListener('click', () => {
+                    statusDisplay.textContent = 'Simple encoding test - functionality coming soon!';
+                    statusDisplay.style.color = '#00ff00';
+                });
+                
+                console.log('✓ Simple video manager created');
+            }
+            
+            // Initialize all components
+            createSimpleDebugger();
+            createSimpleMemoryViewer();
+            createSimpleVideoManager();
+            
+            console.log('🎉 All components initialized successfully!');
+            
+        } catch (error) {
+            console.error('❌ Initialization failed:', error);
+            document.body.innerHTML += `<div style="color: red; padding: 20px;">Error: ${error.message}</div>`;
+        }
+    </script>
+</body>
+</html>

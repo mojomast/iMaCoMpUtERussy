@@ -1,0 +1,8 @@
+# VideoStorage-8 Development Dependencies
+#
+# This project uses only Python's built-in modules.
+# No additional packages are required for the development server.
+#
+# If you need to install additional tools later, add them here:
+# requests>=2.25.0  # For API testing
+# pytest>=6.0.0     # For Python testing
