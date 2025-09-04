@@ -1,3 +1,29 @@
+import winston from 'winston';
+
+// Configure winston logger for queue manager
+const queueLogger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'queue-manager' },
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    }),
+    new winston.transports.File({
+      filename: 'logs/queue-manager.log',
+      maxsize: 10 * 1024 * 1024,
+      maxFiles: 5,
+      tailable: true
+    })
+  ]
+});
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -365,7 +391,11 @@ class PromptQueue {
         this.queue = [];
       }
     } catch (error) {
-      console.warn('Failed to load queue from file:', error.message);
+      queueLogger.warn('Failed to load queue from file, using empty queue', {
+        error: error.message,
+        stack: error.stack,
+        backupCreated: fs.existsSync(this.queueFile)
+      });
       // Create backup of corrupt file if it exists
       if (fs.existsSync(this.queueFile)) {
         const backupPath = path.join(this.backupDir, `queue_corrupt_${Date.now()}.json`);
@@ -418,12 +448,21 @@ class PromptQueue {
           try {
             fs.unlinkSync(file.path);
           } catch (error) {
-            console.warn(`Failed to delete backup ${file.name}:`, error.message);
+            queueLogger.warn('Failed to delete old backup file', {
+              filename: file.name,
+              error: error.message,
+              errorType: error.constructor.name,
+              stack: error.stack
+            });
           }
         });
       }
     } catch (error) {
-      console.warn('Failed to clean old backups:', error.message);
+      queueLogger.warn('Failed to clean old backups', {
+        error: error.message,
+        errorType: error.constructor.name,
+        stack: error.stack
+      });
     }
   }
 
@@ -444,7 +483,11 @@ class PromptQueue {
         })
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     } catch (error) {
-      console.warn('Failed to list backups:', error.message);
+      queueLogger.warn('Failed to list backups', {
+        error: error.message,
+        errorType: error.constructor.name,
+        stack: error.stack
+      });
       return [];
     }
   }
@@ -532,8 +575,13 @@ class PromptQueue {
     }
 
     if (validationErrors.length > 0) {
-      console.warn(`Import validation errors: ${validationErrors.length}`);
-      validationErrors.forEach(err => console.warn(`- ${err.task}: ${err.error}`));
+      queueLogger.warn('Import validation errors detected', {
+        errorCount: validationErrors.length,
+        errors: validationErrors.map(err => ({
+          taskId: err.task,
+          error: err.error
+        }))
+      });
     }
 
     // Create backup of current queue

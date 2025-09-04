@@ -9,16 +9,62 @@
 
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import Ajv from 'ajv';
 import * as fs from 'fs';
 import * as path from 'path';
 import PromptQueue from '../agent/queue-manager.js';
 import { fileURLToPath } from 'url';
 import { createDeveloperAdapters } from './mcp_developer_adapter.js';
-import { MCPError, MCP_ERROR_CODES, formatError } from './mcp_errors.js';
-
+// Winston structured logging setup
+// Define __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+import winston from 'winston';
+
+// Create winston logger configuration
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'mcp-server' },
+  transports: [
+    // Console transport for development
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    }),
+    // File transport for production logging
+    new winston.transports.File({
+      filename: 'logs/mcp-server.log',
+      maxsize: 10 * 1024 * 1024, // 10MB
+      maxFiles: 5,
+      tailable: true
+    }),
+    // Error log file
+    new winston.transports.File({
+      filename: 'logs/mcp-server-error.log',
+      level: 'error',
+      maxsize: 10 * 1024 * 1024,
+      maxFiles: 5,
+      tailable: true
+    })
+  ]
+});
+
+// Create data directory for logs if it doesn't exist
+const dataDir = path.join(__dirname, '..', 'data');
+const logsDir = path.join(dataDir, 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+import { MCPError, MCP_ERROR_CODES, formatError } from './mcp_errors.js';
 
 // Create Express app
 const app = express();
@@ -27,6 +73,43 @@ const PORT = process.env.PORT || 8001;
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// Configure rate limiting middleware
+const intenseLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 requests per window
+  message: {
+    error: 'Too many intense operations',
+    message: 'Rate limit exceeded for CPU-intensive operations (10 requests per 15 minutes). Please try again later.',
+    retryAfter: '15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const moderateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 25, // 25 requests per window
+  message: {
+    error: 'Too many requests',
+    message: 'Rate limit exceeded for operations (25 requests per 5 minutes). Please slow down.',
+    retryAfter: '5 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const lenientLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // 100 requests per window
+  message: {
+    error: 'Rate limit exceeded',
+    message: 'Too many health check requests. Please try again later.',
+    retryAfter: '1 minute'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // Initialize AJV validator - disable remote schema resolution
 const ajv = new Ajv({
@@ -41,11 +124,14 @@ const compiledValidators = {};
 
 function loadSchemas() {
   try {
-    console.log(`Loading schemas from: ${schemasDir}`);
+    logger.info('Loading MCP schemas', { schemasDir, count: 'unknown' });
 
     // Load individual schema files
     const files = fs.readdirSync(schemasDir).filter(f => f.endsWith('.json'));
-    console.log(`Found ${files.length} schema files:`, files.map(f => f.replace('.json', '')));
+    logger.debug('Found schema files', {
+      count: files.length,
+      schemaNames: files.map(f => f.replace('.json', ''))
+    });
 
     for (const file of files) {
       const schemaPath = path.join(schemasDir, file);
@@ -55,37 +141,61 @@ function loadSchemas() {
       const key = file.replace('.json', '');
       try {
         compiledValidators[key] = ajv.compile(schema);
-        console.log(`✅ Loaded schema: ${key}`);
+        logger.debug('Schema loaded successfully', { schema: key });
       } catch (compileError) {
-        console.error(`❌ Failed to compile ${key}:`, compileError.message);
+        logger.warn('Schema compilation failed', {
+          schema: key,
+          error: compileError.message,
+          stack: compileError.stack
+        });
       }
     }
 
-    console.log(`Loaded ${Object.keys(compiledValidators).length} schemas`);
+    logger.info('Schemas loaded', {
+      count: Object.keys(compiledValidators).length,
+      schemasDir
+    });
 
     // Debug: Check if our memory schemas are loaded
     const memorySchemas = ['memory.read.request', 'memory.write.request', 'memory.loadProgram.request'];
-    console.log('Checking memory schemas:');
+    let missingMemorySchemas = [];
+    let loadedMemorySchemas = [];
+
     memorySchemas.forEach(schemaKey => {
       if (compiledValidators[schemaKey]) {
-        console.log(`✅ ${schemaKey} - LOADED`);
+        loadedMemorySchemas.push(schemaKey);
       } else {
-        console.log(`❌ ${schemaKey} - MISSING`);
+        missingMemorySchemas.push(schemaKey);
       }
     });
 
-    // Debug: Check if our debug schemas are loaded
+    logger.debug('Memory schema status', {
+      loaded: loadedMemorySchemas,
+      missing: missingMemorySchemas
+    });
+
+    // Check if our debug schemas are loaded
     const debugSchemas = ['debug.trace.request', 'debug.trace.response', 'debug.memoryView.request', 'debug.memoryView.response', 'debug.breakpoints.request', 'debug.breakpoints.response'];
-    console.log('Checking debug schemas:');
+    let missingDebugSchemas = [];
+    let loadedDebugSchemas = [];
+
     debugSchemas.forEach(schemaKey => {
       if (compiledValidators[schemaKey]) {
-        console.log(`✅ ${schemaKey} - LOADED`);
+        loadedDebugSchemas.push(schemaKey);
       } else {
-        console.log(`❌ ${schemaKey} - MISSING`);
+        missingDebugSchemas.push(schemaKey);
       }
     });
+
+    logger.debug('Debug schema status', {
+      loaded: loadedDebugSchemas,
+      missing: missingDebugSchemas
+    });
   } catch (error) {
-    console.error('Error loading schemas:', error);
+    logger.error('Schema loading failed', {
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -98,9 +208,12 @@ function initializeQueue() {
       queueFile: path.join(__dirname, '..', 'data', 'queue.json'),
       backupDir: path.join(__dirname, '..', 'data', 'backups')
     });
-    console.log('Prompt queue system initialized');
+    logger.info('Prompt queue system initialized');
   } catch (error) {
-    console.error('Error initializing queue system:', error);
+    logger.error('Queue initialization failed', {
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -110,9 +223,12 @@ let adapters;
 function initializeAdapters() {
   try {
     adapters = createDeveloperAdapters();
-    console.log('Developer adapters initialized');
+    logger.info('Developer adapters initialized');
   } catch (error) {
-    console.error('Error initializing adapters:', error);
+    logger.error('Adapter initialization failed', {
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -126,7 +242,7 @@ function validate(schemaKey, data, type = 'request') {
 
   const valid = validator(data);
   if (!valid) {
-    throw MCPError.fromAJVValidation(validator.errors);
+    return { success: false, data, errors: validator.errors };
   }
 
   return { success: true, data };
@@ -140,6 +256,207 @@ function successResponse(data) {
   };
 }
 
+// ============================================================================
+// INPUT VALIDATION AND SANITIZATION UTILITIES
+// ============================================================================
+
+const VALIDATION_CONFIG = {
+  MAX_PROGRAM_NAME_LENGTH: 50,
+  MAX_PROGRAM_SOURCE_LENGTH: 10000, // 10KB limit for program source
+  MAX_FILE_PATH_LENGTH: 255,
+  MAX_MEMORY_SIZE: 65536, // 64KB address space
+  MAX_PIXEL_COORDINATE: 31,
+  MAX_COLOR_VALUE: 255,
+  MAX_TERMINAL_TEXT_LENGTH: 1000,
+  MAX_TIMEOUT_MS: 30000,
+  MIN_TIMEOUT_MS: 100
+};
+
+/**
+ * Sanitize and validate program name
+ * @param {string} name - Program name to validate
+ * @returns {string} Sanitized program name
+ * @throws {MCPError} If name is invalid
+ */
+function sanitizeProgramName(name) {
+  if (!name || typeof name !== 'string') {
+    throw new MCPError('INVALID_REQUEST', 'Program name must be a non-empty string');
+  }
+
+  const sanitized = name.trim().replace(/[^a-zA-Z0-9\-_\.]/g, '').substring(0, VALIDATION_CONFIG.MAX_PROGRAM_NAME_LENGTH);
+
+  if (sanitized.length === 0) {
+    throw new MCPError('INVALID_REQUEST', 'Program name contains no valid characters');
+  }
+
+  // Prevent directory traversal
+  if (sanitized.includes('..') || sanitized.includes('/') || sanitized.includes('\\')) {
+    throw new MCPError('INVALID_REQUEST', 'Program name contains invalid path characters');
+  }
+
+  return sanitized;
+}
+
+/**
+ * Sanitize and validate program source code
+ * @param {string} source - Program source code to validate
+ * @returns {string} Sanitized source code
+ * @throws {MCPError} If source is invalid
+ */
+function sanitizeProgramSource(source) {
+  if (!source || typeof source !== 'string') {
+    throw new MCPError('INVALID_REQUEST', 'Program source must be a non-empty string');
+  }
+
+  if (source.length > VALIDATION_CONFIG.MAX_PROGRAM_SOURCE_LENGTH) {
+    throw new MCPError('PAYLOAD_TOO_LARGE', `Program source too large. Maximum size is ${VALIDATION_CONFIG.MAX_PROGRAM_SOURCE_LENGTH} characters`);
+  }
+
+  // Basic sanitization - remove any potentially harmful patterns in assembly
+  const sanitized = source.replace(/[\x00-\x1F\x7F-\x9F]/g, ''); // Remove control characters
+
+  return sanitized;
+}
+
+/**
+ * Validate memory address
+ * @param {number} address - Memory address to validate
+ * @returns {number} Validated address
+ * @throws {MCPError} If address is invalid
+ */
+function validateMemoryAddress(address) {
+  if (typeof address !== 'number' || isNaN(address)) {
+    throw new MCPError('INVALID_REQUEST', 'Address must be a valid number');
+  }
+
+  if (address < 0 || address > 0xFFFF) {
+    throw new MCPError('MEMORY_OUT_OF_BOUNDS', 'Address must be between 0x0000 and 0xFFFF');
+  }
+
+  return parseInt(address, 10);
+}
+
+/**
+ * Validate memory size
+ * @param {number} size - Memory size to validate
+ * @returns {number} Validated size
+ * @throws {MCPError} If size is invalid
+ */
+function validateMemorySize(size) {
+  if (typeof size !== 'number' || isNaN(size)) {
+    throw new MCPError('INVALID_REQUEST', 'Size must be a valid number');
+  }
+
+  if (size < 1 || size > 65536) {
+    throw new MCPError('INVALID_REQUEST', 'Size must be between 1 and 65536 bytes');
+  }
+
+  return parseInt(size, 10);
+}
+
+/**
+ * Validate pixel coordinates
+ * @param {number} x - X coordinate
+ * @param {number} y - Y coordinate
+ * @throws {MCPError} If coordinates are invalid
+ */
+function validatePixelCoordinates(x, y) {
+  if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) {
+    throw new MCPError('INVALID_REQUEST', 'Coordinates must be valid numbers');
+  }
+
+  if (x < 0 || x > VALIDATION_CONFIG.MAX_PIXEL_COORDINATE ||
+      y < 0 || y > VALIDATION_CONFIG.MAX_PIXEL_COORDINATE) {
+    throw new MCPError('VIDEO_OUT_OF_BOUNDS', `Coordinates must be between 0 and ${VALIDATION_CONFIG.MAX_PIXEL_COORDINATE}`);
+  }
+}
+
+/**
+ * Validate color value
+ * @param {number} color - Color value to validate
+ * @returns {number} Validated color
+ * @throws {MCPError} If color is invalid
+ */
+function validateColor(color) {
+  if (typeof color !== 'number' || isNaN(color)) {
+    throw new MCPError('INVALID_REQUEST', 'Color must be a valid number');
+  }
+
+  if (color < 0 || color > VALIDATION_CONFIG.MAX_COLOR_VALUE) {
+    throw new MCPError('INVALID_REQUEST', `Color must be between 0 and ${VALIDATION_CONFIG.MAX_COLOR_VALUE}`);
+  }
+
+  return parseInt(color, 10);
+}
+
+/**
+ * Validate and sanitize terminal text
+ * @param {string} text - Terminal text to validate
+ * @returns {string} Sanitized text
+ * @throws {MCPError} If text is invalid
+ */
+function sanitizeTerminalText(text) {
+  if (typeof text !== 'string') {
+    throw new MCPError('INVALID_REQUEST', 'Terminal text must be a string');
+  }
+
+  if (text.length > VALIDATION_CONFIG.MAX_TERMINAL_TEXT_LENGTH) {
+    throw new MCPError('PAYLOAD_TOO_LARGE', `Terminal text too long. Maximum length is ${VALIDATION_CONFIG.MAX_TERMINAL_TEXT_LENGTH} characters`);
+  }
+
+  // Sanitize control characters but preserve line breaks and tabs
+  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+}
+
+/**
+ * Validate timeout value
+ * @param {number} timeout - Timeout value to validate
+ * @returns {number} Validated timeout
+ * @throws {MCPError} If timeout is invalid
+ */
+function validateTimeout(timeout) {
+  if (timeout === undefined) return VALIDATION_CONFIG.MIN_TIMEOUT_MS;
+
+  if (typeof timeout !== 'number' || isNaN(timeout)) {
+    throw new MCPError('INVALID_REQUEST', 'Timeout must be a valid number');
+  }
+
+  if (timeout < VALIDATION_CONFIG.MIN_TIMEOUT_MS || timeout > VALIDATION_CONFIG.MAX_TIMEOUT_MS) {
+    throw new MCPError('INVALID_REQUEST', `Timeout must be between ${VALIDATION_CONFIG.MIN_TIMEOUT_MS} and ${VALIDATION_CONFIG.MAX_TIMEOUT_MS} milliseconds`);
+  }
+
+  return parseInt(timeout, 10);
+}
+
+/**
+ * Validate boolean values
+ * @param {*} value - Value to validate
+ * @param {string} fieldName - Name of the field for error messages
+ * @throws {MCPError} If value is not a valid boolean
+ */
+function validateBoolean(value, fieldName = 'boolean') {
+  if (typeof value !== 'boolean') {
+    throw new MCPError('INVALID_REQUEST', `${fieldName} must be a boolean value`);
+  }
+}
+
+/**
+ * Validate string length
+ * @param {string} str - String to validate
+ * @param {number} maxLength - Maximum allowed length
+ * @param {string} fieldName - Name of the field for error messages
+ * @throws {MCPError} If string is invalid
+ */
+function validateStringLength(str, maxLength, fieldName = 'string') {
+  if (typeof str !== 'string') {
+    throw new MCPError('INVALID_REQUEST', `${fieldName} must be a string`);
+  }
+
+  if (str.length > maxLength) {
+    throw new MCPError('PAYLOAD_TOO_LARGE', `${fieldName} too long. Maximum length is ${maxLength} characters`);
+  }
+}
+
 // Async route wrapper for error handling
 function asyncHandler(fn) {
   return (req, res, next) => {
@@ -148,8 +465,11 @@ function asyncHandler(fn) {
 }
 
 // CPU Endpoints
-app.post('/mcp/cpu/reset', asyncHandler(async (req, res) => {
-  validate('cpu.reset.request', req.body);
+app.post('/mcp/cpu/reset', moderateLimiter, asyncHandler(async (req, res) => {
+  const validation = validate('cpu.reset.request', req.body);
+  if (!validation.success) {
+    throw MCPError.fromAJVValidation(validation.errors);
+  }
 
   try {
     const result = adapters.cpu.reset(req.body.hardReset);
@@ -159,25 +479,46 @@ app.post('/mcp/cpu/reset', asyncHandler(async (req, res) => {
   }
 }));
 
-app.post('/mcp/cpu/step', asyncHandler(async (req, res) => {
+app.post('/mcp/cpu/step', intenseLimiter, asyncHandler(async (req, res) => {
   const validation = validate('cpu.step.request', req.body);
   if (!validation.success) {
     throw MCPError.fromAJVValidation(validation.errors);
   }
 
-    const result = adapters.memory.read(addr, 1);
+  try {
+    const validatedTimeout = validateTimeout(req.body.timeout);
+    const result = adapters.cpu.step(validatedTimeout);
 
-    console.log(`Memory I/O read - method:GET, path:/mcp/memory/io, address:0x${addr.toString(16)}`);
+    logger.info('CPU step executed successfully', {
+      endpoint: 'POST /mcp/cpu/step',
+      pc: `0x${result.pc.toString(16)}`,
+      instruction: result.instruction,
+      timeoutMs: validatedTimeout
+    });
+
+    // Validate response against schema
+    const responseValidation = validate('cpu.step.response', { data: result });
+    if (!responseValidation.success) {
+      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
+    }
 
     res.json(successResponse(result));
   } catch (error) {
-    console.error('Memory I/O read error:', error.message);
-    throw new MCPError('INTERNAL_ERROR', 'Memory I/O read failed', error.message, 500);
+    logger.error('CPU step operation failed', {
+      endpoint: 'POST /mcp/cpu/step',
+      error: error.message,
+      errorType: error.constructor.name,
+      stack: error.stack
+    });
+    if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'CPU step operation failed', error.message, 500);
   }
 }));
 
 // Program Endpoints
-app.get('/mcp/programs/list', asyncHandler(async (req, res) => {
+app.get('/mcp/programs/list', moderateLimiter, asyncHandler(async (req, res) => {
   try {
     const result = await adapters.programs.list();
     res.json(successResponse(result));
@@ -186,75 +527,131 @@ app.get('/mcp/programs/list', asyncHandler(async (req, res) => {
   }
 }));
 
-app.post('/mcp/programs/load-sample', asyncHandler(async (req, res) => {
+app.post('/mcp/programs/load-sample', moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('programs.load.request', req.body);
   if (!validation.success) {
-    return res.status(422).json(validation);
+    throw MCPError.fromAJVValidation(validation.errors);
   }
 
   try {
     const { sampleName, assembled, resetCPU } = req.body;
-    const result = await adapters.programs.load(sampleName, assembled, resetCPU);
+
+    // Additional validation and sanitization
+    const sanitizedName = sanitizeProgramName(sampleName);
+    validateBoolean(assembled, 'assembled');
+    validateBoolean(resetCPU, 'resetCPU');
+
+    logger.info('Program load-sample request initiated', {
+      endpoint: 'POST /mcp/programs/load-sample',
+      programName: sanitizedName,
+      assembled,
+      resetCPU
+    });
+
+    const result = await adapters.programs.load(sanitizedName, assembled, resetCPU);
     res.json(successResponse(result));
   } catch (error) {
-    if (error.message.includes('not found')) {
-      throw new MCPError('RESOURCE_NOT_FOUND', 'undefined', null, 404);
+    logger.error('Program load-sample operation failed', {
+      endpoint: 'POST /mcp/programs/load-sample',
+      programName: sanitizedName,
+      error: error.message,
+      errorType: error.constructor.name,
+      stack: error.stack
+    });
+    if (error.message.includes('not found') || error.message.includes('PROGRAM_NOT_FOUND')) {
+      throw new MCPError('RESOURCE_NOT_FOUND', error.message, null, 404);
     } else {
-      throw new MCPError('SYSTEM_ERROR', 'Program load failed', error.message, 500);
+      throw new MCPError('SYSTEM_ERROR', 'Program load-sample failed', error.message, 500);
     }
   }
 }));
 
 // POST /mcp/programs/load - Load program from samples/ by name
-app.post('/mcp/programs/load', asyncHandler(async (req, res) => {
+app.post('/mcp/programs/load', moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('programs.load.request.new', req.body);
   if (!validation.success) {
-    return throw new MCPError('INVALID_REQUEST', 'Invalid request format', validation.error.details, 400);
+    throw MCPError.fromAJVValidation(validation.errors);
   }
 
   try {
     const { name, startAddress } = req.body;
-    console.log(`Program load - method:POST, path:/mcp/programs/load, name:${name}, startAddress:0x${(startAddress || 0x0600).toString(16)}`);
 
-    const result = await adapters.programs.loadProgramFromSource(name, startAddress);
+    // Additional validation and sanitization
+    const sanitizedName = sanitizeProgramName(name);
+    const validatedAddress = validateMemoryAddress(startAddress || 0x0600);
+
+    logger.info('Program load request initiated', {
+      endpoint: 'POST /mcp/programs/load',
+      programName: sanitizedName,
+      startAddress: `0x${validatedAddress?.toString(16)}`
+    });
+
+    const result = await adapters.programs.loadProgramFromSource(sanitizedName, validatedAddress);
     res.json(successResponse(result));
   } catch (error) {
-    console.error('Program load error:', error.message);
+    logger.error('Program load operation failed', {
+      endpoint: 'POST /mcp/programs/load',
+      programName: sanitizedName,
+      error: error.message,
+      errorType: error.constructor.name,
+      stack: error.stack
+    });
 
     if (error.message.includes('PROGRAM_NOT_FOUND')) {
-      throw new MCPError('PROGRAM_NOT_FOUND', 'undefined', null, 422);
+      throw new MCPError('PROGRAM_NOT_FOUND', 'Program not found', null, 422);
     } else if (error.message.includes('INVALID_ASSEMBLY')) {
-      throw new MCPError('INVALID_ASSEMBLY', 'undefined', null, 422);
+      throw new MCPError('INVALID_ASSEMBLY', 'Invalid assembly code', null, 422);
     } else if (error.message.includes('MEMORY_OUT_OF_RANGE')) {
-      throw new MCPError('MEMORY_OUT_OF_RANGE', 'undefined', null, 422);
+      throw new MCPError('MEMORY_OUT_OF_RANGE', 'Memory address out of range', null, 422);
     } else {
-      throw new MCPError('INTERNAL_ERROR', 'undefined', null, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Program load failed', error.message, 500);
     }
   }
 }));
 
 // POST /mcp/programs/save - Save program to samples/
-app.post('/mcp/programs/save', asyncHandler(async (req, res) => {
+app.post('/mcp/programs/save', moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('programs.save.request', req.body);
   if (!validation.success) {
-    throw new MCPError('INVALID_REQUEST', 'Invalid request format', validation.error.details, 400);
+    throw MCPError.fromAJVValidation(validation.errors);
   }
 
   try {
     const { name, source, overwrite } = req.body;
-    console.log(`Program save - method:POST, path:/mcp/programs/save, name:${name}, overwrite:${overwrite}`); //}
 
-    const result = await adapters.programs.saveProgram(name, source, overwrite);
+    // Additional validation and sanitization
+    const sanitizedName = sanitizeProgramName(name);
+    const sanitizedSource = sanitizeProgramSource(source);
+    validateBoolean(overwrite, 'overwrite');
+
+    logger.info('Program save request initiated', {
+      endpoint: 'POST /mcp/programs/save',
+      programName: sanitizedName,
+      overwrite,
+      sourceLength: sanitizedSource.length
+    });
+
+    const result = await adapters.programs.saveProgram(sanitizedName, sanitizedSource, overwrite);
     res.json(successResponse(result));
   } catch (error) {
-    console.error('Program save error:', error.message);
+    logger.error('Program save operation failed', {
+      endpoint: 'POST /mcp/programs/save',
+      programName: sanitizedName,
+      overwrite,
+      error: error.message,
+      errorType: error.constructor.name,
+      stack: error.stack
+    });
 
     if (error.message.includes('PROGRAM_EXISTS')) {
-      throw new MCPError('PROGRAM_EXISTS', 'undefined', null, 422);
+      throw new MCPError('PROGRAM_EXISTS', 'Program already exists', null, 422);
     } else if (error.message.includes('Invalid program name')) {
-      throw new MCPError('INVALID_REQUEST', 'undefined', null, 400);
+      throw new MCPError('INVALID_REQUEST', 'Invalid program name', null, 400);
+    } else if (error instanceof MCPError) {
+      // Re-throw our validation errors
+      throw error;
     } else {
-      throw new MCPError('INTERNAL_ERROR', 'undefined', null, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Program save failed', error.message, 500);
     }
   }
 }));
@@ -262,25 +659,31 @@ app.post('/mcp/programs/save', asyncHandler(async (req, res) => {
 // Video Endpoints
 const WIDTH = 32; // Assume 32 columns for video display
 
-app.post('/mcp/video/setPixel', asyncHandler(async (req, res) => {
+app.post('/mcp/video/setPixel', moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('video.setPixel.request', req.body);
   if (!validation.success) {
-    return res.status(422).json(validation);
+    throw MCPError.fromAJVValidation(validation.errors);
   }
 
   try {
     const { x, y, color } = req.body;
 
-    // Validate bounds - framebuffer starts at 0x0200, ends at 0x05FF (inclusive)
-    if (x < 0 || x >= WIDTH || y < 0 || y >= WIDTH) {
-      throw new MCPError('VIDEO_OUT_OF_BOUNDS', 'Pixel coordinates out of video bounds', null, 422);
-    }
+    // Additional validation using our sanitization functions
+    validatePixelCoordinates(x, y);
+    const validatedColor = validateColor(color);
+
+    // Calculate address after validation
+    const address = 0x0200 + (y * WIDTH) + x;
 
     // Add request logging
-    console.log(`Video setPixel - method:POST, path:/mcp/video/setPixel, x:${x}, y:${y}, color:0x${color.toString(16)}`);
+    logger.info('Video setPixel request processed', {
+      endpoint: 'POST /mcp/video/setPixel',
+      coordinates: { x, y },
+      color: `0x${validatedColor.toString(16)}`,
+      address: `0x${address.toString(16)}`
+    });
 
-    const address = 0x0200 + (y * WIDTH) + x;
-    adapters.memory.write(address, color, 1);
+    adapters.memory.write(address, validatedColor, 1);
 
     const result = { address };
 
@@ -288,31 +691,43 @@ app.post('/mcp/video/setPixel', asyncHandler(async (req, res) => {
     const responseValidation = validate('video.setPixel.response', result);
 
     if (!responseValidation.success) {
-      return throw new MCPError('INTERNAL_ERROR', 'Response validation failed', null, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
     }
 
     res.json(successResponse(result));
   } catch (error) {
-    console.error('Video setPixel error:', error.message);
+    logger.error('Video setPixel operation failed', {
+      endpoint: 'POST /mcp/video/setPixel',
+      coordinates: { x, y },
+      error: error.message,
+      errorType: error.constructor.name,
+      stack: error.stack
+    });
+    if (error instanceof MCPError) {
+      throw error;
+    }
     throw new MCPError('INTERNAL_ERROR', 'Video setPixel failed', error.message, 500);
   }
 }));
 
-app.post('/mcp/video/update', asyncHandler(async (req, res) => {
+app.post('/mcp/video/update', moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('video.update.request', req.body);
   if (!validation.success) {
-    return res.status(422).json(validation);
+    throw MCPError.fromAJVValidation(validation.errors);
   }
 
   try {
-    const { flush } = req.body;
-    const timeoutMs = req.body.timeout || 5000; // Default 5 seconds
+    const { flush, timeout } = req.body;
 
-    // Cap timeout to prevent excessive resource usage
-    const maxTimeoutMs = 30000; // 30 seconds max
-    const effectiveTimeout = Math.min(timeoutMs, maxTimeoutMs);
+    // Additional validation
+    validateBoolean(flush, 'flush');
+    const validatedTimeout = validateTimeout(timeout);
 
-    console.log(`Video update - method:POST, path:/mcp/video/update, timeoutMs:${effectiveTimeout}, flush:${flush}`);
+    logger.info('Video update request processed', {
+      endpoint: 'POST /mcp/video/update',
+      timeoutMs: validatedTimeout,
+      flush
+    });
 
     const startTime = Date.now();
 
@@ -324,17 +739,21 @@ app.post('/mcp/video/update', asyncHandler(async (req, res) => {
           return adapters.video.update(flush);
         } else {
           // TODO: Fall back to memory-based update or CPU instruction
-          console.log('Video update adapter not fully implemented');
+          logger.debug('Video update adapter not fully implemented, using fallback');
           return { displayUpdated: true };
         }
       } catch (error) {
-        console.error('Video update adapter error:', error.message);
+        logger.warn('Video update adapter error, falling back', {
+          error: error.message,
+          errorType: error.constructor.name,
+          stack: error.stack
+        });
         return { displayUpdated: false };
       }
     })();
 
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('VIDEO_UPDATE_TIMEOUT')), effectiveTimeout);
+      setTimeout(() => reject(new Error('VIDEO_UPDATE_TIMEOUT')), validatedTimeout);
     });
 
     const result = await Promise.race([updatePromise, timeoutPromise]);
@@ -346,7 +765,7 @@ app.post('/mcp/video/update', asyncHandler(async (req, res) => {
     const responseValidation = validate('video.update.response', responseData);
 
     if (!responseValidation.success) {
-      return throw new MCPError('INTERNAL_ERROR', 'Response validation failed', null, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
     }
 
     res.json(successResponse(responseData));
@@ -355,34 +774,36 @@ app.post('/mcp/video/update', asyncHandler(async (req, res) => {
 
     if (error.message === 'VIDEO_UPDATE_TIMEOUT') {
       throw new MCPError('VIDEO_UPDATE_TIMEOUT', 'Video update operation timed out', null, 422);
+    } else if (error instanceof MCPError) {
+      throw error;
     } else {
       throw new MCPError('INTERNAL_ERROR', 'Video update failed', error.message, 500);
     }
   }
 }));
 
-app.post('/mcp/video/clear', asyncHandler(async (req, res) => {
+app.post('/mcp/video/clear', moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('video.clear.request', req.body);
   if (!validation.success) {
-    return res.status(422).json(validation);
+    throw MCPError.fromAJVValidation(validation.errors);
   }
 
   try {
     const { color } = req.body;
-    const defaultColor = color !== undefined ? color : 0;
+    const validatedColor = validateColor(color !== undefined ? color : 0);
 
-    console.log(`Video clear - method:POST, path:/mcp/video/clear, color:0x${defaultColor.toString(16)}`);
+    console.log(`Video clear - method:POST, path:/mcp/video/clear, validatedColor:0x${validatedColor.toString(16)}`);
 
     // Clear framebuffer region 0x0200-0x05FF using efficient bulk write
     if (adapters.video.clear) {
-      adapters.video.clear(defaultColor);
+      adapters.video.clear(validatedColor);
     } else {
       // Fallback to efficient bulk memory clear
       const framebufferSize = 1024; // 0x05FF - 0x0200 + 1 = 1024 bytes
-      const clearBuffer = Array(framebufferSize).fill(defaultColor);
+      const clearBuffer = Array(framebufferSize).fill(validatedColor);
       // Clear memory in chunks to avoid overloading
       for (let addr = 0x0200; addr <= 0x05FF; addr++) {
-        adapters.memory.write(addr, defaultColor, 1);
+        adapters.memory.write(addr, validatedColor, 1);
       }
     }
 
@@ -392,185 +813,188 @@ app.post('/mcp/video/clear', asyncHandler(async (req, res) => {
     const responseValidation = validate('video.clear.response', result);
 
     if (!responseValidation.success) {
-      return throw new MCPError('INTERNAL_ERROR', 'Response validation failed', null, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
     }
 
     res.json(successResponse(result));
   } catch (error) {
     console.error('Video clear error:', error.message);
+    if (error instanceof MCPError) {
+      throw error;
+    }
     throw new MCPError('INTERNAL_ERROR', 'Video clear failed', error.message, 500);
   }
 }));
 
-// Debug Endpoints - STUB IMPLEMENTATIONS WITH TODO COMMENTS
-app.post('/mcp/debug/trace', asyncHandler(async (req, res) => {
-  const validation = validate('debug.trace.request', req.body);
-  if (!validation.success) {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: 'INVALID_REQUEST',
-        message: 'Invalid request format',
-        details: validation.error.details.errors
-      }
-    });
-  }
+// Debug Endpoints
+app.post('/mcp/debug/trace', intenseLimiter, asyncHandler(async (req, res) => {
+   const validation = validate('debug.trace.request', req.body);
+   if (!validation.success) {
+     throw MCPError.fromAJVValidation(validation.errors);
+   }
 
-  try {
-    const { steps, until } = req.body;
-    const effectiveSteps = Math.min(steps || 100, 10000); // Cap at sensible default
+   try {
+     const { steps, until } = req.body;
+     const effectiveSteps = Math.min(steps || 100, 10000); // Cap at sensible default
 
-    console.log(`Debug trace - method:POST, path:/mcp/debug/trace, steps:${effectiveSteps}, until:${until || 'default'}`);
+     console.log(`Debug trace - method:POST, path:/mcp/debug/trace, steps:${effectiveSteps}, until:${until || 'default'}`);
 
-    const traceResult = await adapters.debug.trace(effectiveSteps, { until });
+     const traceResult = await adapters.debug.trace(effectiveSteps, { until });
 
-    // Apply timeout cap (default 10000ms, max 30000ms)
-    const timeout = Math.min(10000, 30000);
+     // Validate response against schema
+     const responseValidation = validate('debug.trace.response', traceResult);
+     if (!responseValidation.success) {
+       throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
+     }
 
-    res.json(successResponse(traceResult));
-  } catch (error) {
-    console.error('Debug trace error:', error.message);
+     res.json(successResponse(traceResult));
+   } catch (error) {
+     console.error('Debug trace error:', error.message);
 
-    if (error.message.includes('BREAKPOINT')) {
-      throw new MCPError('BREAKPOINT_HIT', 'undefined', null, 422);
-    } else if (error.message.includes('CPU_HALTED')) {
-      throw new MCPError('CPU_HALTED', 'undefined', null, 422);
-    } else {
-      throw new MCPError('INTERNAL_ERROR', 'undefined', null, 500);
-    }
-  }
+     if (error.message.includes('BREAKPOINT')) {
+       throw new MCPError('BREAKPOINT_HIT', 'Breakpoint hit', null, 422);
+     } else if (error.message.includes('CPU_HALTED')) {
+       throw new MCPError('CPU_HALTED', 'CPU halted', null, 422);
+     } else {
+       throw new MCPError('INTERNAL_ERROR', 'Debug trace failed', error.message, 500);
+     }
+   }
 }));
 
-app.post('/mcp/debug/memoryView', asyncHandler(async (req, res) => {
-  const validation = validate('debug.memoryView.request', req.body);
-  if (!validation.success) {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: 'INVALID_REQUEST',
-        message: 'Invalid request format',
-        details: validation.error.details.errors
+app.post('/mcp/debug/memoryView', intenseLimiter, asyncHandler(async (req, res) => {
+    const validation = validate('debug.memoryView.request', req.body);
+    if (!validation.success) {
+      throw MCPError.fromAJVValidation(validation.errors);
+    }
+
+    try {
+      const { address, size } = req.body;
+
+      // Use our validation functions
+      const validatedAddress = validateMemoryAddress(address);
+      const validatedSize = validateMemorySize(size || 256);
+
+      // Check if range would exceed address space
+      if (validatedAddress + validatedSize - 1 > 0xFFFF) {
+        throw new MCPError('MEMORY_OUT_OF_BOUNDS', `Memory range (0x${validatedAddress.toString(16)} to 0x${(validatedAddress + validatedSize - 1).toString(16)}) would exceed address space`, null, 400);
       }
-    });
-  }
 
-  try {
-    const { address, size } = req.body;
+      console.log(`Debug memoryView - method:POST, path:/mcp/debug/memoryView, validatedAddress:0x${validatedAddress.toString(16)}, validatedSize:${validatedSize}`);
 
-    if (isNaN(address) || address < 0 || address > 0xFFFF) {
-      return throw new MCPError('MEMORY_OUT_OF_BOUNDS', 'Invalid memory address', null, 400);
+      // Read the memory range using the adapter functions
+      const bytes = [];
+      for (let i = 0; i < validatedSize; i++) {
+        const addr = validatedAddress + i;
+        const result = await adapters.memory.read(addr, 1);
+        bytes.push(result.data.value);
+      }
+
+      const response = {
+        address: validatedAddress,
+        size: validatedSize,
+        bytes,
+        format: 'numeric',
+        endAddress: validatedAddress + validatedSize - 1
+      };
+
+      // Validate response against schema
+      const responseValidation = validate('debug.memoryView.response', response);
+      if (!responseValidation.success) {
+        throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
+      }
+
+      res.json(successResponse(response));
+    } catch (error) {
+      console.error('Debug memoryView error:', error.message);
+
+      if (error instanceof MCPError) {
+        throw error;
+      } else if (error.message.includes('out of bounds') || error.message.includes('invalid address')) {
+        throw new MCPError('MEMORY_OUT_OF_RANGE', 'Memory address out of range', null, 422);
+      } else {
+        throw new MCPError('INTERNAL_ERROR', 'Debug memory view failed', error.message, 500);
+      }
     }
-
-    const effectiveSize = Math.min(size, 65536); // Cap at 64KB
-    if (address + effectiveSize - 1 > 0xFFFF) {
-      return throw new MCPError('MEMORY_OUT_OF_BOUNDS', 'Memory range would exceed address space', null, 400);
-    }
-
-    console.log(`Debug memoryView - method:POST, path:/mcp/debug/memoryView, address:0x${address.toString(16)}, size:${effectiveSize}`);
-
-    // Read the memory range using the adapter functions
-    const bytes = [];
-    for (let i = 0; i < effectiveSize; i++) {
-      const addr = address + i;
-      const result = adapters.memory.read(addr, 1);
-      bytes.push(result.value);
-    }
-
-    const response = {
-      address,
-      size: effectiveSize,
-      bytes,
-      format: 'numeric',
-      endAddress: address + effectiveSize - 1
-    };
-
-    res.json(successResponse(response));
-  } catch (error) {
-    console.error('Debug memoryView error:', error.message);
-
-    if (error.message.includes('out of bounds') || error.message.includes('invalid address')) {
-      throw new MCPError('MEMORY_OUT_OF_RANGE', 'undefined', null, 422);
-    } else {
-      throw new MCPError('INTERNAL_ERROR', 'undefined', null, 500);
-    }
-  }
 }));
 
-app.post('/mcp/debug/breakpoints', asyncHandler(async (req, res) => {
-  const validation = validate('debug.breakpoints.request', req.body);
-  if (!validation.success) {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: 'INVALID_REQUEST',
-        message: 'Invalid request format',
-        details: validation.error.details.errors
-      }
-    });
-  }
+app.post('/mcp/debug/breakpoints', intenseLimiter, asyncHandler(async (req, res) => {
+   const validation = validate('debug.breakpoints.request', req.body);
+   if (!validation.success) {
+     throw MCPError.fromAJVValidation(validation.errors);
+   }
 
-  try {
-    const { action, address, id } = req.body;
+   try {
+     const { action, address, id } = req.body;
 
-    console.log(`Debug breakpoints - method:POST, path:/mcp/debug/breakpoints, action:${action}, address:0x${(address || 0).toString(16)}, id:${id || 'N/A'}`);
+     console.log(`Debug breakpoints - method:POST, path:/mcp/debug/breakpoints, action:${action}, address:0x${(address || 0).toString(16)}, id:${id || 'N/A'}`);
 
-    let operationResult;
+     let operationResult;
 
-    switch (action) {
-      case 'set':
-        operationResult = {
-          action: 'set',
-          success: true,
-          id: adapters.debug.setBreakpoint(address),
-          address
-        };
-        break;
+     switch (action) {
+       case 'set':
+         const breakpointId = await adapters.debug.setBreakpoint(address);
+         operationResult = {
+           action: 'set',
+           success: true,
+           id: breakpointId,
+           address
+         };
+         break;
 
-      case 'list':
-        const breakpoints = adapters.debug.listBreakpoints();
-        operationResult = {
-          action: 'list',
-          success: true
-        };
-        // Breakpoints are included in the outer response
-        break;
+       case 'list':
+         const breakpoints = await adapters.debug.listBreakpoints();
+         operationResult = {
+           action: 'list',
+           success: true
+         };
+         // Breakpoints are included in the outer response
+         break;
 
-      case 'remove':
-        const removeResult = adapters.debug.removeBreakpoint(id || address);
-        operationResult = {
-          action: 'remove',
-          success: true,
-          address: address || removeResult.address,
-          id: id || removeResult.id,
-          removed: removeResult.removed
-        };
-        break;
+       case 'remove':
+         const removeResult = await adapters.debug.removeBreakpoint(id || address);
+         operationResult = {
+           action: 'remove',
+           success: removeResult.removed,
+           address: address || removeResult.address,
+           id: id || removeResult.id,
+           removed: removeResult.removed
+         };
+         if (!removeResult.removed) {
+           operationResult.error = 'Breakpoint not found';
+         }
+         break;
 
-      default:
-        throw new Error(`INVALID_BREAKPOINT: Unknown action '${action}'`);
-    }
+       default:
+         throw new Error(`INVALID_BREAKPOINT: Unknown action '${action}'`);
+     }
 
-    const response = {
-      breakpoints: action === 'list' ? adapters.debug.listBreakpoints() : undefined,
-      operationResult
-    };
+     const response = {
+       breakpoints: action === 'list' ? await adapters.debug.listBreakpoints() : undefined,
+       operationResult
+     };
 
-    res.json(successResponse(response));
-  } catch (error) {
-    console.error('Debug breakpoints error:', error.message);
+     // Validate response against schema
+     const responseValidation = validate('debug.breakpoints.response', response);
+     if (!responseValidation.success) {
+       throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
+     }
 
-    if (error.message.includes('INVALID_BREAKPOINT') || error.message.includes('breakpoint already exists')) {
-      throw new MCPError('INVALID_BREAKPOINT', 'undefined', null, 422);
-    } else if (error.message.includes('NOT_FOUND')) {
-      throw new MCPError('NOT_FOUND', 'undefined', null, 404);
-    } else {
-      throw new MCPError('INTERNAL_ERROR', 'undefined', null, 500);
-    }
-  }
+     res.json(successResponse(response));
+   } catch (error) {
+     console.error('Debug breakpoints error:', error.message);
+
+     if (error.message.includes('INVALID_BREAKPOINT') || error.message.includes('breakpoint already exists')) {
+       throw new MCPError('INVALID_BREAKPOINT', 'Invalid breakpoint operation', null, 422);
+     } else if (error.message.includes('NOT_FOUND')) {
+       throw new MCPError('NOT_FOUND', 'Breakpoint not found', null, 404);
+     } else {
+       throw new MCPError('INTERNAL_ERROR', 'Debug breakpoints failed', error.message, 500);
+     }
+   }
 }));
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', lenientLimiter, (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 

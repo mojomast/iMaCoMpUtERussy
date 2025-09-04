@@ -16,7 +16,7 @@
     "mcp-server": "node server/mcp_server.js",
     "queue-server": "node server/queue-server.js",
     "autonomous-agent": "node agent/autonomous-agent.js",
-    "autonomous-system-start": "concurrently 'npm run mcp-server' 'npm run queue-server' 'npm run autonomous-agent'",
+    "autonomous-system-start": "concurrently \"npm run mcp-server\" \"npm run queue-server\" \"npm run autonomous-agent\"",
     "integration-tests": "npm run --prefix integration test",
     "docs": "npm run docs:serve",
     "docs:serve": "mkdir -p docs && python -m http.server 8003 -d docs",
@@ -47,9 +47,14 @@
   "dependencies": {
     "express": "^4.18.2",
     "ajv": "^8.12.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "concurrently": "^8.2.0",
+    "winston": "^3.10.0",
+    "helmet": "^7.0.0",
+    "express-rate-limit": "^6.8.0"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "supertest": "^6.3.3"
   }
 }

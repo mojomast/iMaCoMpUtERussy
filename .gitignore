@@ -92,3 +92,6 @@ test-videos/
 *.avi
 *.mov
 *.webm
+
+# Hackathon project
+hackathon-project/

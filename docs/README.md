@@ -45,6 +45,37 @@ Welcome to the iMaCoMpUtERussy documentation! This interactive 8-bit emulator pr
 ### 🎮 Interactive Features
 - **[Setup and Deployment](./SETUP_DEPLOYMENT.md)** - Production deployment guide
 - **[Video Embedding Guide](./VIDEO_EMBEDDING_GUIDE.md)** - Steganography usage
+### 🖥️ MCP Server Integration
+- **[MCP Server Documentation](./MCP_SERVER_README.md)** - Complete MCP server setup and usage
+  - Server architecture and configuration
+  - Client integration examples
+  - Debugging capabilities and tools
+  - RooCode development kit integration
+
+- **[MCP API Documentation](./MCP_API_DOCS.md)** - Comprehensive API reference
+  - Full endpoint specifications
+  - Request/response schemas
+  - Authentication and security
+  - Error handling and troubleshooting
+
+- **[MCP API Design](./MCP_API_DESIGN.md)** - Technical architecture guide
+  - Protocol design principles
+  - Schema definitions and validation
+  - Performance optimization techniques
+  - Extensibility and customization
+
+- **[MCP API Examples](./MCP_API_EXAMPLES.md)** - Practical implementation guide
+  - Real-world usage patterns
+  - Integration examples with external tools
+  - Testing and validation frameworks
+  - Production deployment strategies
+
+- **[Save/Load System Architecture](./SAVE_LOAD_SYSTEM_ARCHITECTURE.md)** - Program persistence framework
+  - Rich metadata schema with 50+ fields
+  - Semantic versioning and lineage tracking
+  - Advanced search and filtering
+  - Tiered storage architecture
+
 - **[Troubleshooting](./TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## 🎯 Choose Your Path

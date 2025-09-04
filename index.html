@@ -158,29 +158,123 @@
             white-space: pre-wrap;
             word-wrap: break-word;
         }
-        
+
         .mcp-info {
             background-color: rgba(0, 255, 0, 0.1);
             border-left: 3px solid #00ff00;
             color: #00ff00;
         }
-        
+
         .mcp-warning {
             background-color: rgba(255, 255, 0, 0.1);
             border-left: 3px solid #ffff00;
             color: #ffff00;
         }
-        
+
         .mcp-error {
             background-color: rgba(255, 0, 0, 0.1);
             border-left: 3px solid #ff0000;
             color: #ff6666;
         }
-        
+
         .mcp-debug {
             background-color: rgba(128, 128, 128, 0.1);
             border-left: 3px solid #888888;
             color: #cccccc;
+        }
+
+        .mcp-success {
+            background-color: rgba(0, 255, 255, 0.1);
+            border-left: 3px solid #00ffff;
+            color: #00ffff;
+        }
+
+        /* Connection Status Styles */
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 10px;
+        }
+
+        .connection-status.disconnected {
+            background-color: rgba(255, 0, 0, 0.2);
+            border: 1px solid #ff3333;
+            color: #ff6666;
+        }
+
+        .connection-status.connecting {
+            background-color: rgba(255, 255, 0, 0.2);
+            border: 1px solid #ffff33;
+            color: #ffff66;
+            animation: pulse 1s infinite;
+        }
+
+        .connection-status.connected {
+            background-color: rgba(0, 255, 0, 0.2);
+            border: 1px solid #00ff33;
+            color: #00ff66;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        /* MCP Console Command Interface */
+        .mcp-command-interface {
+            border-bottom: 1px solid #333;
+            padding-bottom: 8px;
+            margin-bottom: 8px;
+        }
+
+        #mcp-command-templates {
+            background: #000;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+        }
+
+        #mcp-command-templates:focus {
+            outline: 1px solid #00ff00;
+        }
+
+        #mcp-command-input {
+            background: #000;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+        }
+
+        #mcp-command-input:focus {
+            outline: 1px solid #00ff00;
+        }
+
+        .mcp-button {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 11px;
+            border-radius: 3px;
+            transition: all 0.2s;
+        }
+
+        .mcp-button:hover {
+            background: rgba(0, 255, 0, 0.2);
+        }
+
+        .mcp-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         
         .debugger-row #registers {
@@ -456,44 +550,207 @@
             width: 8px;
             height: 8px;
         }
-        
+
         .panel-content::-webkit-scrollbar-track {
             background: #001100;
             border: 1px solid #003300;
         }
-        
+
         .panel-content::-webkit-scrollbar-thumb {
             background: #00ff00;
             border-radius: 0px; /* Keep it square for retro look */
             border: 1px solid #00aa00;
         }
-        
+
         .panel-content::-webkit-scrollbar-thumb:hover {
             background: #00cc00;
         }
-        
+
         .panel-content::-webkit-scrollbar-corner {
             background: #001100;
         }
-        
+
         /* Specific scrollbar for console display */
         #console-display::-webkit-scrollbar {
             width: 10px;
         }
-        
+
         #console-display::-webkit-scrollbar-track {
             background: #000000;
             border: 1px solid #004400;
         }
-        
+
         #console-display::-webkit-scrollbar-thumb {
             background: #00ff00;
             border-radius: 0px;
             border: 1px solid #00aa00;
         }
-        
+
         #console-display::-webkit-scrollbar-thumb:hover {
             background: #44ff44;
+        }
+
+        /* VOICE CONTROL STYLES */
+        .voice-control-panel {
+            position: fixed;
+            top: 120px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #00ff00;
+            border-radius: 8px;
+            padding: 12px;
+            min-width: 280px;
+            z-index: 10000;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .voice-control-panel.hidden {
+            display: none;
+        }
+
+        .voice-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .voice-indicator {
+            font-size: 16px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .voice-indicator.idle {
+            background: rgba(128, 128, 128, 0.3);
+            border: 1px solid #666;
+            color: #ccc;
+        }
+
+        .voice-indicator.listening {
+            background: rgba(0, 255, 0, 0.3);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            animation: pulse 1s infinite alternate;
+        }
+
+        .voice-indicator.processing {
+            background: rgba(255, 255, 0, 0.3);
+            border: 1px solid #ffff00;
+            color: #ffff00;
+            animation: spinner 1s linear infinite;
+        }
+
+        .voice-indicator.speaking {
+            background: rgba(0, 255, 255, 0.3);
+            border: 1px solid #00ffff;
+            color: #00ffff;
+        }
+
+        .voice-indicator.error {
+            background: rgba(255, 0, 0, 0.3);
+            border: 1px solid #ff0000;
+            color: #ff6666;
+        }
+
+        .voice-level {
+            flex: 1;
+            height: 4px;
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .voice-level-bar {
+            height: 100%;
+            background: #00ff00;
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        .voice-toggle-btn {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 11px;
+            width: 100%;
+            transition: all 0.2s;
+        }
+
+        .voice-toggle-btn:hover {
+            background: rgba(0, 255, 0, 0.2);
+        }
+
+        .voice-toggle-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .voice-waveform {
+            margin-top: 8px;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #333;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .voice-waveform-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .voice-commands-list {
+            margin-top: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .voice-command-item {
+            padding: 4px 8px;
+            border-bottom: 1px solid #333;
+            color: #ccc;
+            font-size: 10px;
+        }
+
+        .voice-command-item:last-child {
+            border-bottom: none;
+        }
+
+        .voice-confidence {
+            float: right;
+            color: #666;
+            font-size: 9px;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Retro terminal-style animations */
+        .voice-terminal-text {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #333;
+            padding: 8px;
+            font-size: 11px;
+            white-space: pre-wrap;
+            max-height: 100px;
+            overflow-y: auto;
+            color: #00ff00;
         }
     </style>
 </head>
@@ -503,6 +760,22 @@
             <h1>iMaCoMpUtERussy</h1>
             <p class="subtitle">An emulator for a fake computer that never existed that has neat tricks.</p>
         </header>
+
+        <!-- Voice Control Panel -->
+        <div id="voice-control-panel" class="voice-control-panel hidden">
+            <div class="voice-status">
+                <span id="voice-indicator" class="voice-indicator idle">🎙️ Ready</span>
+                <div class="voice-level">
+                    <div id="voice-level-bar" class="voice-level-bar"></div>
+                </div>
+            </div>
+            <button id="voice-toggle-btn" class="voice-toggle-btn">🎤 Start Voice Control</button>
+            <div class="voice-waveform">
+                <canvas id="voice-waveform-canvas" class="voice-waveform-canvas"></canvas>
+            </div>
+            <div id="voice-terminal" class="voice-terminal-text"></div>
+            <div class="voice-commands-list" id="voice-commands-list"></div>
+        </div>
         
         <!-- Row 1: FILE / DEBUG - Controls left, Debug info right -->
         <div class="debugger-row">
@@ -789,13 +1062,35 @@
     <!-- Load JS modules -->
     <script type="module">
         console.log('Setting up UI components...');
-        
+
+        // Import voice control module
+        import { VoiceControlSystem } from './js/ui/voice-control.js';
+
+        // Global voice control instance
+        window.voiceControl = null;
+
         // Wait for core initialization and then initialize debugger
         function waitForCore() {
             if (window.coreInitialized && window.cpu && window.memory) {
                 initializeDebugger();
+                initializeVoiceControl();
             } else {
                 setTimeout(waitForCore, 100);
+            }
+        }
+
+        // Initialize voice control system
+        async function initializeVoiceControl() {
+            try {
+                // Create voice control instance
+                window.voiceControl = new VoiceControlSystem();
+
+                // Initialize it
+                await window.voiceControl.initialize();
+
+                console.log('✓ Voice control system initialized');
+            } catch (error) {
+                console.error('Failed to initialize voice control:', error);
             }
         }
         
