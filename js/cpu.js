@@ -665,9 +665,10 @@ export class iMaCoMpUtERussyCPU {
     /**
      * Run multiple instructions
      * @param {number} stepsOrTimeout - Maximum steps to execute, or 0 for unlimited
+     * @param {boolean} autoCleanup - Whether to automatically cleanup after execution
      * @returns {number} Steps executed
      */
-    run(stepsOrTimeout = 0) {
+    run(stepsOrTimeout = 0, autoCleanup = false) {
         let steps = 0;
         const maxSteps = stepsOrTimeout > 0 ? stepsOrTimeout : Infinity;
 
@@ -676,6 +677,36 @@ export class iMaCoMpUtERussyCPU {
             steps++;
         }
 
+        if (autoCleanup) {
+            this.cleanup();
+        }
+
         return steps;
+    }
+
+    /**
+     * Cleanup CPU state and memory references after emulation session
+     * Explicitly dereferences state for garbage collection
+     */
+    cleanup() {
+        // Stop running state
+        this.running = false;
+
+        // Clear registers and state
+        this.A = null;
+        this.X = null;
+        this.Y = null;
+        this.SP = null;
+        this.PC = null;
+        this.P = null;
+
+        // Clear memory reference if it was internally created
+        if (this.memory && !this.memory.readByte && !this.memory.writeByte && Array.isArray(this.memory)) {
+            // Internal array memory - can be nulled
+            this.memory = null;
+        } else if (this.memory) {
+            // External memory object - just dereference
+            this.memory = null;
+        }
     }
 }

@@ -24,6 +24,7 @@ import PromptQueue from './queue-manager.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import ErrorHandler from '../lib/ErrorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -146,7 +147,11 @@ export class AutonomousSoftwareAgent {
 
     // Save learning model
     if (this.options.learningEnabled) {
-      this.saveLearningModel();
+      try {
+        this.saveLearningModel();
+      } catch (error) {
+        const stdError = ErrorHandler.standardizeError(error, 'autonomous_agent::stop');
+      }
     }
 
     console.log('✅ Agent stopped successfully');
@@ -633,7 +638,7 @@ export class AutonomousSoftwareAgent {
         console.log(`💾 Saved program: ${programName}`);
       }
     } catch (error) {
-      console.warn(`⚠️  Failed to save program: ${error.message}`);
+      const stdError = ErrorHandler.standardizeError(error, 'autonomous_agent::saveResult');
     }
   }
 
@@ -767,7 +772,7 @@ export class AutonomousSoftwareAgent {
         return JSON.parse(data);
       }
     } catch (error) {
-      console.warn(`⚠️  Failed to load learning model: ${error.message}`);
+      const stdError = ErrorHandler.standardizeError(error, 'autonomous_agent::loadLearningModel');
     }
 
     // Return default learning model
@@ -803,7 +808,7 @@ export class AutonomousSoftwareAgent {
         JSON.stringify(this.learningModel, null, 2)
       );
     } catch (error) {
-      console.warn(`⚠️  Failed to save learning model: ${error.message}`);
+      const stdError = ErrorHandler.standardizeError(error, 'autonomous_agent::saveLearningModel');
     }
   }
 
@@ -818,7 +823,8 @@ export class AutonomousSoftwareAgent {
       }
       return true;
     } catch (error) {
-      throw new Error(`MCP connection failed: ${error.message}`);
+      const stdError = ErrorHandler.standardizeError(error, 'autonomous_agent::verifyMCPConnection');
+      throw new Error(`MCP connection failed: ${stdError.message}`);
     }
   }
 
@@ -1992,7 +1998,8 @@ export async function testAutonomousAgent(options = {}) {
     console.log('✅ Autonomous agent MCP connection test passed');
     return true;
   } catch (error) {
-    console.error('❌ Autonomous agent MCP connection test failed:', error.message);
+    const stdError = ErrorHandler.standardizeError(error, 'autonomous_agent::testAutonomousAgent');
+    console.error('❌ Autonomous agent MCP connection test failed:', stdError.message);
     return false;
   } finally {
     await agent.stop();

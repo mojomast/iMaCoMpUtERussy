@@ -16,12 +16,14 @@ import * as path from 'path';
 import PromptQueue from '../agent/queue-manager.js';
 import { fileURLToPath } from 'url';
 import { createDeveloperAdapters } from './mcp_developer_adapter.js';
+import MultiModelMCPServer from './multi_model_mcp_server.js';
 // Winston structured logging setup
 // Define __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 import winston from 'winston';
+// import { resolvePort } from '../lib/port-utils.js';
 
 // Create winston logger configuration
 const logger = winston.createLogger({
@@ -65,10 +67,14 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 import { MCPError, MCP_ERROR_CODES, formatError } from './mcp_errors.js';
+import ErrorHandler from '../lib/ErrorHandler.js';
 
 // Create Express app
 const app = express();
 const PORT = process.env.PORT || 8001;
+
+// Server instance for graceful shutdown
+let server = null;
 
 // Middleware
 app.use(cors());
@@ -110,6 +116,34 @@ const lenientLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+
+// ============================================================================
+// API KEY AUTHENTICATION MIDDLEWARE
+// ============================================================================
+
+/**
+ * Middleware to authenticate requests using API key
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+function authenticateAPIKey(req, res, next) {
+  const apiKey = req.headers['x-api-key'] || req.headers['authorization'];
+  const expectedApiKey = process.env.MCP_API_KEY || 'default-api-key-change-in-production';
+
+  if (!apiKey) {
+    throw new MCPError('UNAUTHORIZED', 'API key required', null, 401);
+  }
+
+  // Support both Bearer token and direct API key
+  const providedKey = apiKey.startsWith('Bearer ') ? apiKey.slice(7) : apiKey;
+
+  if (providedKey !== expectedApiKey) {
+    throw new MCPError('UNAUTHORIZED', 'Invalid API key', null, 401);
+  }
+
+  next();
+}
 
 // Initialize AJV validator - disable remote schema resolution
 const ajv = new Ajv({
@@ -192,10 +226,7 @@ function loadSchemas() {
       missing: missingDebugSchemas
     });
   } catch (error) {
-    logger.error('Schema loading failed', {
-      error: error.message,
-      stack: error.stack
-    });
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::loadSchemas');
     throw error;
   }
 }
@@ -206,29 +237,26 @@ function initializeQueue() {
   try {
     queueManager = new PromptQueue({
       queueFile: path.join(__dirname, '..', 'data', 'queue.json'),
-      backupDir: path.join(__dirname, '..', 'data', 'backups')
+      backupDir: path.join(__dirname, '..', 'data', 'backups'),
+      aiProcessor: multiModelServer
     });
     logger.info('Prompt queue system initialized');
   } catch (error) {
-    logger.error('Queue initialization failed', {
-      error: error.message,
-      stack: error.stack
-    });
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::initializeQueue');
     throw error;
   }
 }
 
 // Initialize developer API adapters
 let adapters;
+// Initialize multi-model server
+let multiModelServer;
 function initializeAdapters() {
   try {
     adapters = createDeveloperAdapters();
     logger.info('Developer adapters initialized');
   } catch (error) {
-    logger.error('Adapter initialization failed', {
-      error: error.message,
-      stack: error.stack
-    });
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::initializeAdapters');
     throw error;
   }
 }
@@ -475,11 +503,12 @@ app.post('/mcp/cpu/reset', moderateLimiter, asyncHandler(async (req, res) => {
     const result = adapters.cpu.reset(req.body.hardReset);
     res.json(successResponse(result));
   } catch (error) {
-    throw new MCPError('CPU_NOT_READY', 'CPU operation failed', { originalError: error.message });
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::cpu_reset');
+    throw new MCPError('CPU_NOT_READY', 'CPU operation failed', { originalError: stdError.message });
   }
 }));
 
-app.post('/mcp/cpu/step', intenseLimiter, asyncHandler(async (req, res) => {
+app.post('/mcp/cpu/step', authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
   const validation = validate('cpu.step.request', req.body);
   if (!validation.success) {
     throw MCPError.fromAJVValidation(validation.errors);
@@ -504,16 +533,11 @@ app.post('/mcp/cpu/step', intenseLimiter, asyncHandler(async (req, res) => {
 
     res.json(successResponse(result));
   } catch (error) {
-    logger.error('CPU step operation failed', {
-      endpoint: 'POST /mcp/cpu/step',
-      error: error.message,
-      errorType: error.constructor.name,
-      stack: error.stack
-    });
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::cpu_step');
     if (error instanceof MCPError) {
       throw error;
     }
-    throw new MCPError('INTERNAL_ERROR', 'CPU step operation failed', error.message, 500);
+    throw new MCPError('INTERNAL_ERROR', 'CPU step operation failed', stdError.message, 500);
   }
 }));
 
@@ -523,7 +547,8 @@ app.get('/mcp/programs/list', moderateLimiter, asyncHandler(async (req, res) => 
     const result = await adapters.programs.list();
     res.json(successResponse(result));
   } catch (error) {
-    throw new MCPError('SYSTEM_ERROR', 'Program list failed', error.message, 500);
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::programs_list');
+    throw new MCPError('SYSTEM_ERROR', 'Program list failed', stdError.message, 500);
   }
 }));
 
@@ -551,17 +576,11 @@ app.post('/mcp/programs/load-sample', moderateLimiter, asyncHandler(async (req, 
     const result = await adapters.programs.load(sanitizedName, assembled, resetCPU);
     res.json(successResponse(result));
   } catch (error) {
-    logger.error('Program load-sample operation failed', {
-      endpoint: 'POST /mcp/programs/load-sample',
-      programName: sanitizedName,
-      error: error.message,
-      errorType: error.constructor.name,
-      stack: error.stack
-    });
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::programs_load_sample');
     if (error.message.includes('not found') || error.message.includes('PROGRAM_NOT_FOUND')) {
-      throw new MCPError('RESOURCE_NOT_FOUND', error.message, null, 404);
+      throw new MCPError('RESOURCE_NOT_FOUND', stdError.message, null, 404);
     } else {
-      throw new MCPError('SYSTEM_ERROR', 'Program load-sample failed', error.message, 500);
+      throw new MCPError('SYSTEM_ERROR', 'Program load-sample failed', stdError.message, 500);
     }
   }
 }));
@@ -589,14 +608,7 @@ app.post('/mcp/programs/load', moderateLimiter, asyncHandler(async (req, res) =>
     const result = await adapters.programs.loadProgramFromSource(sanitizedName, validatedAddress);
     res.json(successResponse(result));
   } catch (error) {
-    logger.error('Program load operation failed', {
-      endpoint: 'POST /mcp/programs/load',
-      programName: sanitizedName,
-      error: error.message,
-      errorType: error.constructor.name,
-      stack: error.stack
-    });
-
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::programs_load');
     if (error.message.includes('PROGRAM_NOT_FOUND')) {
       throw new MCPError('PROGRAM_NOT_FOUND', 'Program not found', null, 422);
     } else if (error.message.includes('INVALID_ASSEMBLY')) {
@@ -604,13 +616,13 @@ app.post('/mcp/programs/load', moderateLimiter, asyncHandler(async (req, res) =>
     } else if (error.message.includes('MEMORY_OUT_OF_RANGE')) {
       throw new MCPError('MEMORY_OUT_OF_RANGE', 'Memory address out of range', null, 422);
     } else {
-      throw new MCPError('INTERNAL_ERROR', 'Program load failed', error.message, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Program load failed', stdError.message, 500);
     }
   }
 }));
 
 // POST /mcp/programs/save - Save program to samples/
-app.post('/mcp/programs/save', moderateLimiter, asyncHandler(async (req, res) => {
+app.post('/mcp/programs/save', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('programs.save.request', req.body);
   if (!validation.success) {
     throw MCPError.fromAJVValidation(validation.errors);
@@ -634,15 +646,7 @@ app.post('/mcp/programs/save', moderateLimiter, asyncHandler(async (req, res) =>
     const result = await adapters.programs.saveProgram(sanitizedName, sanitizedSource, overwrite);
     res.json(successResponse(result));
   } catch (error) {
-    logger.error('Program save operation failed', {
-      endpoint: 'POST /mcp/programs/save',
-      programName: sanitizedName,
-      overwrite,
-      error: error.message,
-      errorType: error.constructor.name,
-      stack: error.stack
-    });
-
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::programs_save');
     if (error.message.includes('PROGRAM_EXISTS')) {
       throw new MCPError('PROGRAM_EXISTS', 'Program already exists', null, 422);
     } else if (error.message.includes('Invalid program name')) {
@@ -651,7 +655,7 @@ app.post('/mcp/programs/save', moderateLimiter, asyncHandler(async (req, res) =>
       // Re-throw our validation errors
       throw error;
     } else {
-      throw new MCPError('INTERNAL_ERROR', 'Program save failed', error.message, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Program save failed', stdError.message, 500);
     }
   }
 }));
@@ -696,17 +700,12 @@ app.post('/mcp/video/setPixel', moderateLimiter, asyncHandler(async (req, res) =
 
     res.json(successResponse(result));
   } catch (error) {
-    logger.error('Video setPixel operation failed', {
-      endpoint: 'POST /mcp/video/setPixel',
-      coordinates: { x, y },
-      error: error.message,
-      errorType: error.constructor.name,
-      stack: error.stack
-    });
+    error.context = { coordinates: { x, y } };
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::video_setPixel');
     if (error instanceof MCPError) {
       throw error;
     }
-    throw new MCPError('INTERNAL_ERROR', 'Video setPixel failed', error.message, 500);
+    throw new MCPError('INTERNAL_ERROR', 'Video setPixel failed', stdError.message, 500);
   }
 }));
 
@@ -770,14 +769,13 @@ app.post('/mcp/video/update', moderateLimiter, asyncHandler(async (req, res) => 
 
     res.json(successResponse(responseData));
   } catch (error) {
-    console.error('Video update error:', error.message);
-
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::video_update');
     if (error.message === 'VIDEO_UPDATE_TIMEOUT') {
       throw new MCPError('VIDEO_UPDATE_TIMEOUT', 'Video update operation timed out', null, 422);
     } else if (error instanceof MCPError) {
       throw error;
     } else {
-      throw new MCPError('INTERNAL_ERROR', 'Video update failed', error.message, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Video update failed', stdError.message, 500);
     }
   }
 }));
@@ -818,16 +816,16 @@ app.post('/mcp/video/clear', moderateLimiter, asyncHandler(async (req, res) => {
 
     res.json(successResponse(result));
   } catch (error) {
-    console.error('Video clear error:', error.message);
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::video_clear');
     if (error instanceof MCPError) {
       throw error;
     }
-    throw new MCPError('INTERNAL_ERROR', 'Video clear failed', error.message, 500);
+    throw new MCPError('INTERNAL_ERROR', 'Video clear failed', stdError.message, 500);
   }
 }));
 
 // Debug Endpoints
-app.post('/mcp/debug/trace', intenseLimiter, asyncHandler(async (req, res) => {
+app.post('/mcp/debug/trace', authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
    const validation = validate('debug.trace.request', req.body);
    if (!validation.success) {
      throw MCPError.fromAJVValidation(validation.errors);
@@ -849,19 +847,18 @@ app.post('/mcp/debug/trace', intenseLimiter, asyncHandler(async (req, res) => {
 
      res.json(successResponse(traceResult));
    } catch (error) {
-     console.error('Debug trace error:', error.message);
-
+     const stdError = ErrorHandler.standardizeError(error, 'mcp_server::debug_trace');
      if (error.message.includes('BREAKPOINT')) {
        throw new MCPError('BREAKPOINT_HIT', 'Breakpoint hit', null, 422);
      } else if (error.message.includes('CPU_HALTED')) {
        throw new MCPError('CPU_HALTED', 'CPU halted', null, 422);
      } else {
-       throw new MCPError('INTERNAL_ERROR', 'Debug trace failed', error.message, 500);
+       throw new MCPError('INTERNAL_ERROR', 'Debug trace failed', stdError.message, 500);
      }
    }
 }));
 
-app.post('/mcp/debug/memoryView', intenseLimiter, asyncHandler(async (req, res) => {
+app.post('/mcp/debug/memoryView', authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
     const validation = validate('debug.memoryView.request', req.body);
     if (!validation.success) {
       throw MCPError.fromAJVValidation(validation.errors);
@@ -905,19 +902,18 @@ app.post('/mcp/debug/memoryView', intenseLimiter, asyncHandler(async (req, res) 
 
       res.json(successResponse(response));
     } catch (error) {
-      console.error('Debug memoryView error:', error.message);
-
+      const stdError = ErrorHandler.standardizeError(error, 'mcp_server::debug_memoryView');
       if (error instanceof MCPError) {
         throw error;
       } else if (error.message.includes('out of bounds') || error.message.includes('invalid address')) {
         throw new MCPError('MEMORY_OUT_OF_RANGE', 'Memory address out of range', null, 422);
       } else {
-        throw new MCPError('INTERNAL_ERROR', 'Debug memory view failed', error.message, 500);
+        throw new MCPError('INTERNAL_ERROR', 'Debug memory view failed', stdError.message, 500);
       }
     }
 }));
 
-app.post('/mcp/debug/breakpoints', intenseLimiter, asyncHandler(async (req, res) => {
+app.post('/mcp/debug/breakpoints', authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
    const validation = validate('debug.breakpoints.request', req.body);
    if (!validation.success) {
      throw MCPError.fromAJVValidation(validation.errors);
@@ -981,21 +977,87 @@ app.post('/mcp/debug/breakpoints', intenseLimiter, asyncHandler(async (req, res)
 
      res.json(successResponse(response));
    } catch (error) {
-     console.error('Debug breakpoints error:', error.message);
-
+     const stdError = ErrorHandler.standardizeError(error, 'mcp_server::debug_breakpoints');
      if (error.message.includes('INVALID_BREAKPOINT') || error.message.includes('breakpoint already exists')) {
        throw new MCPError('INVALID_BREAKPOINT', 'Invalid breakpoint operation', null, 422);
      } else if (error.message.includes('NOT_FOUND')) {
        throw new MCPError('NOT_FOUND', 'Breakpoint not found', null, 404);
      } else {
-       throw new MCPError('INTERNAL_ERROR', 'Debug breakpoints failed', error.message, 500);
+       throw new MCPError('INTERNAL_ERROR', 'Debug breakpoints failed', stdError.message, 500);
      }
    }
+ }));
+
+// ============================================================================
+// AI MODEL ENDPOINTS
+// ============================================================================
+
+app.post('/mcp/ai/generate', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+ try {
+   const { prompt, task, options } = req.body;
+
+   // Additional validation and sanitization
+   if (!prompt || typeof prompt !== 'string') {
+     throw new MCPError('INVALID_REQUEST', 'Prompt must be a non-empty string');
+   }
+
+   const sanitizedPrompt = prompt.trim();
+   const taskType = task || 'generation';
+
+   if (sanitizedPrompt.length === 0 || sanitizedPrompt.length > 10000) {
+     throw new MCPError('INVALID_REQUEST', 'Prompt length must be between 1 and 10000 characters');
+   }
+
+   logger.info('AI generation request initiated', {
+     endpoint: 'POST /mcp/ai/generate',
+     task: taskType,
+     promptLength: sanitizedPrompt.length
+   });
+
+   const result = await multiModelServer.generateWithBestModel(sanitizedPrompt, taskType);
+
+   if (!result.success) {
+     throw new MCPError('AI_GENERATION_FAILED', result.error, result, 422);
+   }
+
+   res.json(successResponse(result));
+ } catch (error) {
+   const stdError = ErrorHandler.standardizeError(error, 'mcp_server::ai_generate');
+   if (error instanceof MCPError) {
+     throw error;
+   } else {
+     throw new MCPError('INTERNAL_ERROR', 'AI generation failed', stdError.message, 500);
+   }
+ }
+}));
+
+app.post('/mcp/ai/models', authenticateAPIKey, lenientLimiter, asyncHandler(async (req, res) => {
+ try {
+   const { task } = req.body;
+   const availableModels = multiModelServer.getAvailableModels(task);
+   const configStatus = multiModelServer.getConfigStatus();
+
+   res.json(successResponse({
+     availableModels: availableModels.map(m => ({
+       name: m.name,
+       provider: m.provider,
+       capabilities: m.capabilities
+     })),
+     configStatus
+   }));
+ } catch (error) {
+   const stdError = ErrorHandler.standardizeError(error, 'mcp_server::ai_models');
+   if (error instanceof MCPError) {
+     throw error;
+   } else {
+     throw new MCPError('INTERNAL_ERROR', 'Failed to get AI models', stdError.message, 500);
+   }
+ }
 }));
 
 // Health check endpoint
 app.get('/health', lenientLimiter, (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+ res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // MCP Error handling middleware
@@ -1031,20 +1093,111 @@ app.use('/mcp/*', (req, res) => {
   return res.status(404).json(formatError(error));
 });
 
+/**
+ * Perform graceful shutdown of MCP server
+ */
+async function shutdown() {
+  console.log('Performing graceful shutdown of MCP Server...');
+
+  try {
+    // Stop accepting new connections
+    if (server) {
+      server.close(() => {
+        console.log('HTTP server closed successfully');
+      });
+    }
+
+    // Clean up queue manager resources
+    if (queueManager) {
+      // Save any pending queue state
+      await queueManager.saveQueue();
+      console.log('Queue state saved');
+    }
+
+    // Close database connections (if any)
+    if (adapters && adapters.memory && adapters.memory.close) {
+      try {
+        await adapters.memory.close();
+        console.log('Memory adapter closed');
+      } catch (err) {
+        logger.warn('Error closing memory adapter:', err);
+      }
+    }
+
+    // Clean up other adapter resources
+    if (adapters && adapters.programs && adapters.programs.close) {
+      try {
+        await adapters.programs.close();
+        console.log('Programs adapter closed');
+      } catch (err) {
+        logger.warn('Error closing programs adapter:', err);
+      }
+    }
+
+    // Wait a moment for cleanup
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+  } catch (error) {
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::shutdown');
+  }
+
+  console.log('MCP Server shutdown complete');
+}
+
+// Handle shutdown signals
+process.on('SIGINT', async () => {
+  console.log('\nReceived SIGINT signal');
+  try {
+    await shutdown();
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\nReceived SIGTERM signal');
+  try {
+    await shutdown();
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
 // Initialize and start server
 async function startServer() {
   try {
-    loadSchemas();
-    initializeAdapters();
-    initializeQueue();
+    console.log('Starting MCP server initialization...');
 
-    app.listen(PORT, () => {
+    loadSchemas();
+    console.log('Schemas loaded successfully');
+
+    initializeAdapters();
+    console.log('Adapters initialized successfully');
+
+    multiModelServer = new MultiModelMCPServer();
+    console.log('MultiModelMCPServer initialized successfully');
+
+    initializeQueue();
+    console.log('Queue initialized successfully');
+
+    server = app.listen(PORT, () => {
       console.log(`iMaCoMpUtERussy MCP Server running on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
       console.log(`API base URL: http://localhost:${PORT}/mcp`);
     });
+
+    // Handle server-level errors
+    server.on('error', (error) => {
+      console.error('Server error:', error.message, error.stack);
+      process.exit(1);
+    });
+
   } catch (error) {
-    console.error('Failed to start MCP server:', error);
+    console.error('Failed to start MCP server:', error.message, error.stack);
     process.exit(1);
   }
 }

@@ -1,0 +1,64 @@
+{
+  "models": {
+    "gpt-4": {
+      "name": "GPT-4",
+      "provider": "OpenAI",
+      "apiKey": "${OPENAI_API_KEY}",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "modelId": "gpt-4",
+      "capabilities": ["generation", "optimization", "debugging"],
+      "costPerToken": 0.00006,
+      "maxTokens": 4096,
+      "supported": true
+    },
+    "claude-2": {
+      "name": "Claude 2",
+      "provider": "Anthropic",
+      "apiKey": "${ANTHROPIC_API_KEY}",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "modelId": "claude-2",
+      "capabilities": ["generation", "optimization"],
+      "costPerToken": 0.00001,
+      "maxTokens": 8192,
+      "supported": true
+    },
+    "codellama": {
+      "name": "Code Llama",
+      "provider": "Meta",
+      "apiKey": "${META_API_KEY}",
+      "endpoint": "https://api.meta.ai/v1/code/generate",
+      "modelId": "codellama-7b",
+      "capabilities": ["code_generation", "code_optimization", "bug_detection"],
+      "costPerToken": 0.00002,
+      "maxTokens": 2048,
+      "supported": false
+    }
+  },
+  "task_defaults": {
+    "generation": {
+      "preferred": "gpt-4",
+      "fallback": ["claude-2"]
+    },
+    "optimization": {
+      "preferred": "claude-2",
+      "fallback": ["gpt-4", "codellama"]
+    },
+    "testing": {
+      "preferred": "codellama",
+      "fallback": ["gpt-4"]
+    },
+    "debugging": {
+      "preferred": "gpt-4",
+      "fallback": ["claude-2"]
+    },
+    "custom": {
+      "preferred": "gpt-4",
+      "fallback": ["claude-2", "codellama"]
+    }
+  },
+  "rate_limits": {
+    "per_second": 10,
+    "per_minute": 100,
+    "per_hour": 1000
+  }
+}

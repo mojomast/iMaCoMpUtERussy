@@ -507,4 +507,541 @@ button.loading::after {
     font-size: 12px;
 }
 
-/* TODO: Add more detailed component styles - debugger panels, memory viewer, video controls */
+/* Register display styles */
+.register-display {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+}
+
+.register-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 8px 0;
+    padding: 5px;
+    background: rgba(0, 255, 0, 0.05);
+    border-radius: 4px;
+}
+
+.register-value {
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.register-row .register-value {
+    font-family: 'Courier New', monospace;
+}
+
+/* Feedback animations for register changes */
+.pc-change {
+    background-color: rgba(0, 255, 255, 0.3);
+    animation: pc-highlight 1s ease;
+}
+
+.register-change {
+    background-color: rgba(255, 255, 0, 0.3);
+    animation: register-highlight 0.8s ease;
+}
+
+.stack-change {
+    background-color: rgba(255, 68, 68, 0.3);
+    animation: stack-highlight 0.8s ease;
+}
+
+.flags-change {
+    background-color: rgba(128, 0, 255, 0.3);
+    animation: flags-highlight 0.8s ease;
+}
+
+/* Memory viewer enhancements */
+.memory-display {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    background-color: #000;
+    color: #00ff00;
+    padding: 10px;
+    border: 1px solid #00ff00;
+    overflow: auto;
+    max-height: 400px; /* Set max height for dashboard */
+    box-sizing: border-box;
+    white-space: pre;
+    word-wrap: break-word;
+}
+
+/* Memory change feedback */
+.memory-cell {
+    transition: background-color 0.5s ease;
+}
+
+.memory-modified {
+    background-color: rgba(255, 255, 0, 0.3);
+    animation: memory-flash 0.8s ease;
+}
+
+.memory-affected {
+    background-color: rgba(0, 255, 255, 0.3);
+    animation: memory-affected-highlight 1s ease;
+}
+
+/* Current instruction highlighting */
+.instruction-line {
+    transition: background-color 0.3s ease;
+}
+
+.current-instruction {
+    background-color: rgba(0, 255, 0, 0.4);
+    animation: instruction-flash 0.6s ease;
+}
+
+/* Dashboard section organization */
+.dashboard-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.memory-section h3 {
+    margin: 0 0 5px 0;
+    font-size: 11px;
+}
+
+/* Status display enhancements */
+.status-display {
+    padding: 8px 15px;
+    border: 1px solid #00ff00;
+    margin-top: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+}
+
+.status-display.success {
+    border-color: #00ff00;
+    background-color: rgba(0, 255, 0, 0.1);
+    color: #00ff00;
+}
+
+.status-display.error {
+    border-color: #ff4444;
+    background-color: rgba(255, 68, 68, 0.1);
+    color: #ffaaaa;
+}
+
+/* Keyframe animations */
+@keyframes pc-highlight {
+    0% { background-color: rgba(0, 255, 255, 0.3); }
+    50% { background-color: rgba(0, 255, 255, 0.6); }
+    100% { background-color: rgba(0, 255, 255, 0.3); }
+}
+
+@keyframes register-highlight {
+    0% { background-color: rgba(255, 255, 0, 0.3); }
+    50% { background-color: rgba(255, 255, 0, 0.6); }
+    100% { background-color: rgba(255, 255, 0, 0.3); }
+}
+
+@keyframes stack-highlight {
+    0% { background-color: rgba(255, 68, 68, 0.3); }
+    50% { background-color: rgba(255, 68, 68, 0.6); }
+    100% { background-color: rgba(255, 68, 68, 0.3); }
+}
+
+@keyframes flags-highlight {
+    0% { background-color: rgba(128, 0, 255, 0.3); }
+    50% { background-color: rgba(128, 0, 255, 0.6); }
+    100% { background-color: rgba(128, 0, 255, 0.3); }
+}
+
+@keyframes memory-flash {
+    0% { background-color: rgba(255, 255, 0, 0.3); }
+    50% { background-color: rgba(255, 255, 0, 0.7); }
+    100% { background-color: rgba(255, 255, 0, 0.3); }
+}
+
+@keyframes memory-affected-highlight {
+    0% { background-color: rgba(0, 255, 255, 0.3); }
+    50% { background-color: rgba(0, 255, 255, 0.6); }
+    100% { background-color: rgba(0, 255, 255, 0.3); }
+}
+
+@keyframes instruction-flash {
+    0% { background-color: rgba(0, 255, 0, 0.4); }
+    50% { background-color: rgba(0, 255, 0, 0.7); }
+    100% { background-color: rgba(0, 255, 0, 0.4); }
+}
+
+/* Mobile responsiveness for dashboard */
+@media (max-width: 768px) {
+    .memory-display {
+        font-size: 11px;
+        max-height: 250px;
+        padding: 8px;
+    }
+
+    .dashboard-section h3 {
+        font-size: 11px;
+    }
+
+    .status-display {
+        padding: 6px 10px;
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 640px) {
+    .memory-display {
+        max-height: 200px;
+        font-size: 10px;
+    }
+
+    .register-display {
+        font-size: 11px;
+    }
+
+    .register-row {
+        margin: 6px 0;
+        padding: 4px;
+    }
+/* Tutorial System Styles */
+#tutorial-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.tutorial-modal {
+    background: linear-gradient(135deg, #001100, #003300);
+    border: 2px solid #00ff00;
+    border-radius: 12px;
+    box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+}
+
+.tutorial-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid #00ff00;
+    background: rgba(0, 255, 0, 0.05);
+}
+
+.tutorial-header h2 {
+    margin: 0;
+    color: #00ff00;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+#tutorial-close-btn {
+    background: none;
+    border: none;
+    color: #00ff00;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#tutorial-close-btn:hover {
+    background-color: rgba(255, 68, 68, 0.2);
+    color: #ffaaaa;
+}
+
+.tutorial-content {
+    padding: 20px;
+    color: #00ff00;
+}
+
+.tutorial-content p {
+    margin: 0;
+    line-height: 1.6;
+    font-size: 14px;
+}
+
+.tutorial-actions {
+    display: flex;
+    justify-content: space-between;
+    padding: 15px 20px;
+    border-top: 1px solid #00ff00;
+    gap: 10px;
+}
+
+.tutorial-actions button {
+    flex: 1;
+    background-color: #333;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    padding: 10px 15px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.tutorial-actions button:hover:not(:disabled) {
+    background-color: #00ff00;
+    color: #000;
+}
+
+.tutorial-actions button:disabled {
+    background-color: #666;
+    color: #ccc;
+    border-color: #666;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.tutorial-progress {
+    padding: 15px 20px;
+    border-top: 1px solid #00ff00;
+    background: rgba(0, 255, 0, 0.03);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 8px;
+    background-color: #333;
+    border: 1px solid #00ff00;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: #00ff00;
+    width: 0%;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+#tutorial-step-counter {
+    color: #00ff00;
+    font-size: 12px;
+    font-weight: bold;
+    min-width: 60px;
+    text-align: center;
+}
+
+/* Help Tooltip Styles */
+.help-tooltip {
+    position: absolute;
+    background: linear-gradient(135deg, #001100, #003300);
+    border: 2px solid #00ff00;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 0 20px rgba(0, 255, 0, 0.4);
+    z-index: 1001;
+    max-width: 250px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: #00ff00;
+    line-height: 1.5;
+    opacity: 0;
+    animation: tooltipFadeIn 0.2s ease forwards;
+    pointer-events: none;
+}
+
+.tooltip-content {
+    font-size: 11px;
+}
+
+.tooltip-arrow {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border-style: solid;
+}
+
+.tooltip-top .tooltip-arrow {
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 10px 10px 0 10px;
+    border-color: #00ff00 transparent transparent transparent;
+}
+
+.tooltip-bottom .tooltip-arrow {
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 0 10px 10px 10px;
+    border-color: transparent transparent #00ff00 transparent;
+}
+
+.tooltip-left .tooltip-arrow {
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-width: 10px 0 10px 10px;
+    border-color: transparent transparent transparent #00ff00;
+}
+
+.tooltip-right .tooltip-arrow {
+    left: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-width: 10px 10px 10px 0;
+    border-color: transparent #00ff00 transparent transparent;
+}
+
+@keyframes tooltipFadeIn {
+    0% { opacity: 0; transform: translateY(-5px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Tutorial Highlight Effects */
+.tutorial-highlight {
+    position: relative;
+    z-index: 999;
+    animation: tutorial-pulse 2s infinite;
+}
+
+@keyframes tutorial-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 255, 0, 0.7);
+        border-color: #ffff00;
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(255, 255, 0, 0);
+        border-color: #ffff00;
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 255, 0, 0);
+        border-color: #00ff00;
+    }
+}
+
+/* Help Toggle Button */
+#help-toggle-btn {
+    background-color: #333;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    transition: all 0.2s ease;
+}
+
+#help-toggle-btn:hover {
+    background-color: #00ff00;
+    color: #000;
+}
+
+#help-toggle-btn.active {
+    background-color: #00ff00;
+    color: #000;
+    font-weight: bold;
+}
+
+/* Tutorial Launch Button */
+#tutorial-launch-btn {
+    background-color: #0088ff;
+    border: 1px solid #0088ff;
+    color: #ffffff;
+}
+
+#tutorial-launch-btn:hover {
+    background-color: #0066cc;
+    color: #ffffff;
+}
+
+/* Tutorial Completion Styles */
+.tutorial-completion {
+    text-align: center;
+}
+
+.tutorial-completion h3 {
+    margin: 0 0 20px 0;
+    color: #00ff00;
+    font-size: 20px;
+}
+
+.tutorial-completion p {
+    margin-bottom: 15px;
+    color: #00ff00;
+    line-height: 1.6;
+}
+
+.tutorial-completion ul {
+    text-align: left;
+    margin: 15px 0;
+    padding-left: 20px;
+}
+
+.tutorial-completion li {
+    margin-bottom: 8px;
+    color: #00ff00;
+    font-size: 13px;
+}
+
+/* Mobile responsive tutorial styles */
+@media (max-width: 640px) {
+    .tutorial-modal {
+        width: 95%;
+        margin: 20px;
+    }
+
+    .tutorial-header {
+        padding: 15px;
+    }
+
+    .tutorial-content {
+        padding: 15px;
+    }
+
+    .tutorial-actions {
+        padding: 12px 15px;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .tutorial-actions button {
+        font-size: 11px;
+        padding: 8px 12px;
+    }
+
+    .tutorial-progress {
+        padding: 12px 15px;
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    #tutorial-step-counter {
+        text-align: center;
+        font-size: 11px;
+    }
+
+    .help-tooltip {
+        max-width: 200px;
+        font-size: 11px;
+    }
+}
+}

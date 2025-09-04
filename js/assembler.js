@@ -230,6 +230,31 @@ function resolveValue(val, labels) {
 }
 
 /**
+ * Sanitize assembly source code by stripping invalid characters and enforcing length limits.
+ * @param {string} source - Raw assembly source code
+ * @returns {string} Sanitized source code
+ * @throws {Error} If source is invalid or too long
+ */
+function sanitizeAssemblySource(source) {
+  if (!source || typeof source !== 'string') {
+    throw new Error('Assembly source must be a non-empty string');
+  }
+
+  const MAX_SOURCE_LENGTH = 10000; // 10KB limit
+
+  if (source.length > MAX_SOURCE_LENGTH) {
+    throw new Error(`Assembly source too large. Maximum size is ${MAX_SOURCE_LENGTH} characters`);
+  }
+
+  // Strip invalid characters - allow only valid assembly language characters
+  // Allow: letters, numbers, whitespace, $, #, :, ;, (, ), ,, -, +, =, /, ., ', ", @
+  // Remove: control characters, non-printable, potentially dangerous chars
+  const sanitized = source.replace(/[^\w\s$#();,.:\-+=/@'"\\]/g, '');
+
+  return sanitized;
+}
+
+/**
  * Assemble assembly source code into machine code bytes.
  * Supports indexed addressing ($1234,X; $12,Y) and simple expressions (#$10+5; loop+2).
  * @param {string} source - Assembly source code
@@ -240,6 +265,9 @@ function resolveValue(val, labels) {
 export function assemble(source, options = {}) {
   const origin = options.origin || 0x0600;
   const labels = new Map();
+
+  // Sanitize the input source
+  source = sanitizeAssemblySource(source);
 
   // First pass: collect labels and calculate sizes
   let currentPC = origin;

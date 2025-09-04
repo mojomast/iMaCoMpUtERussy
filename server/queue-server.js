@@ -10,6 +10,7 @@
 import express from 'express';
 import cors from 'cors';
 import PromptQueue from '../agent/queue-manager.js';
+import { resolvePort } from '../lib/port-utils.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -19,6 +20,9 @@ const __dirname = path.dirname(__filename);
 // Create Express app
 const app = express();
 const PORT = process.env.QUEUE_PORT || 8002;
+
+// Server instance for graceful shutdown
+let server = null;
 
 // Middleware
 app.use(cors());
@@ -338,23 +342,88 @@ app.use('/queue/*', (req, res) => {
   res.status(404).json(errorResponse('NOT_FOUND', `Endpoint ${req.path} not found`));
 });
 
+/**
+ * Perform graceful shutdown of Queue server
+ */
+async function shutdown() {
+  console.log('Performing graceful shutdown of Queue Server...');
+
+  try {
+    // Stop accepting new connections
+    if (server) {
+      server.close(() => {
+        console.log('HTTP server closed successfully');
+      });
+    }
+
+    // Save any pending queue state
+    if (queueManager) {
+      await queueManager.saveQueue();
+      console.log('Queue state saved');
+      console.log('Cleaning up completed tasks during shutdown...');
+      await queueManager.cleanCompleted();
+    }
+
+    // Wait a moment for cleanup
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+  } catch (error) {
+    console.error('Error during queue server shutdown:', error);
+  }
+
+  console.log('Queue Server shutdown complete');
+}
+
+// Handle shutdown signals
+process.on('SIGINT', async () => {
+  console.log('\nReceived SIGINT signal');
+  try {
+    await shutdown();
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\nReceived SIGTERM signal');
+  try {
+    await shutdown();
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
 // Initialize and start server
 async function startServer() {
   try {
+    // Resolve port before starting
+    const actualPort = await resolvePort(PORT, 'Queue Server', console);
+
     initializeQueue();
 
-    app.listen(PORT, () => {
-      console.log(`AI Prompt Queue Server running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
-      console.log(`API base URL: http://localhost:${PORT}/queue`);
+    server = app.listen(actualPort, () => {
+      console.log(`AI Prompt Queue Server running on port ${actualPort}`);
+      console.log(`Health check: http://localhost:${actualPort}/health`);
+      console.log(`API base URL: http://localhost:${actualPort}/queue`);
       console.log('');
       console.log('Queue management endpoints:');
-      console.log(`  Add task:    curl -X POST http://localhost:${PORT}/queue/add -H "Content-Type: application/json" -d '{"prompt":"Generate a hello world program"}'`);
-      console.log(`  List tasks:  curl http://localhost:${PORT}/queue/list`);
-      console.log(`  Get next:    curl http://localhost:${PORT}/queue/next`);
-      console.log(`  Get stats:   curl http://localhost:${PORT}/queue/stats`);
+      console.log(`  Add task:    curl -X POST http://localhost:${actualPort}/queue/add -H "Content-Type: application/json" -d '{"prompt":"Generate a hello world program"}'`);
+      console.log(`  List tasks:  curl http://localhost:${actualPort}/queue/list`);
+      console.log(`  Get next:    curl http://localhost:${actualPort}/queue/next`);
+      console.log(`  Get stats:   curl http://localhost:${actualPort}/queue/stats`);
       console.log('');
     });
+
+    // Handle server-level errors
+    server.on('error', (error) => {
+      console.error('Server error:', error);
+      process.exit(1);
+    });
+
   } catch (error) {
     console.error('Failed to start Queue server:', error);
     process.exit(1);

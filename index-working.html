@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iMaCoMpUtERussy - 6502 CPU Emulator</title>
+    <link rel="stylesheet" href="css/components.css">
     <style>
         body {
             background-color: #000;
@@ -12,189 +13,362 @@
             margin: 0;
             padding: 10px;
         }
-        
+
+        /* Responsive main container */
         .main-container {
             display: grid;
-            grid-template-columns: 1.5fr 3fr 1.5fr;
-            gap: 10px;
-            height: calc(100vh - 40px);
+            grid-template-columns: 2fr 3fr 2fr;
+            gap: 15px;
+            height: calc(100vh - 120px); /* Account for controls and status */
+            margin-bottom: 20px;
         }
-        
+
+        /* Panel styles */
         .panel {
             background: #001100;
             border: 2px solid #00ff00;
-            border-radius: 5px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
         }
-        
+
         .panel-header {
             background: #003300;
-            padding: 8px;
+            padding: 10px 15px;
             border-bottom: 1px solid #00ff00;
-            cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            font-weight: bold;
+            font-size: 14px;
         }
-        
+
         .panel-content {
-            padding: 10px;
+            flex: 1;
+            padding: 15px;
             overflow-y: auto;
-            height: calc(100% - 50px);
         }
-        
-        #video-canvas {
-            width: 100%;
-            max-width: 320px;
-            height: auto;
-            border: 1px solid #00ff00;
-            background: #000;
-        }
-        
-        button {
-            background: #003300;
-            color: #00ff00;
-            border: 1px solid #00ff00;
-            padding: 5px 10px;
-            margin: 2px;
-            cursor: pointer;
-            font-family: 'Courier New', monospace;
-        }
-        
-        button:hover {
-            background: #004400;
-        }
-        
-        input, select {
-            background: #001100;
-            color: #00ff00;
-            border: 1px solid #00ff00;
-            padding: 3px;
-            font-family: 'Courier New', monospace;
-        }
-        
-        .controls {
-            display: flex;
-            gap: 5px;
-            margin: 10px 0;
-        }
-        
-        #terminal-display {
-            background: #000;
-            border: 1px solid #00ff00;
-            padding: 10px;
-            height: 200px;
-            overflow-y: auto;
+
+        /* Register display styles */
+        .register-display {
             font-family: 'Courier New', monospace;
             font-size: 12px;
         }
-        
-        #terminal-input {
-            width: 70%;
-            background: #001100;
-            color: #00ff00;
-            border: 1px solid #00ff00;
+
+        .register-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
             padding: 5px;
+            background: rgba(0, 255, 0, 0.05);
+            border-radius: 4px;
+        }
+
+        /* Dashboard section styles */
+        .dashboard-section h3 {
+            margin: 0 0 10px 0;
+            color: #00ff00;
+            font-size: 12px;
+            text-transform: uppercase;
+            border-bottom: 1px solid #00ff00;
+            padding-bottom: 5px;
+        }
+
+        /* Terminal and Console styles */
+        .terminal-section {
+            height: 100%;
+        }
+
+        .console-display {
+            background-color: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff00;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            height: 50%;
+            overflow-y: auto;
+            margin-bottom: 5px;
+            white-space: pre-wrap;
+            line-height: 1.2;
+        }
+
+        .terminal-display {
+            background-color: rgba(0, 0, 0, 0.9);
+            border: 2px solid #00ff00;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 50%;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            line-height: 1.3;
+        }
+
+        .memory-section {
+            flex: 1;
+        }
+
+        /* Control groups */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 15px 0;
+            padding: 15px;
+            background: rgba(0, 255, 0, 0.05);
+            border: 1px solid #00ff00;
+            border-radius: 8px;
+        }
+
+        .control-group h3 {
+            margin: 0 0 10px 0;
+            color: #00ff00;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        /* Responsive design for mobile */
+        @media (max-width: 1024px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                gap: 10px;
+                height: auto;
+            }
+
+            .controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .register-row {
+                font-size: 11px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 5px;
+            }
+
+            .main-container {
+                gap: 8px;
+            }
+
+            .panel-header {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+
+            .panel-content {
+                padding: 10px;
+            }
+
+            .dashboard-section {
+                margin-bottom: 15px;
+            }
+
+            .dashboard-section:last-child {
+                margin-bottom: 0;
+            }
+        }
+
+        /* Feedback animation styles */
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        @keyframes glow {
+            0% { box-shadow: 0 0 0 rgba(0, 255, 0, 0.5); }
+            50% { box-shadow: 0 0 15px rgba(0, 255, 0, 0.8); }
+            100% { box-shadow: 0 0 0 rgba(0, 255, 0, 0); }
+        }
+
+        .register-change {
+            animation: pulse 0.5s ease;
+        }
+
+        .memory-modified {
+            animation: glow 1s ease;
+            background-color: rgba(255, 255, 0, 0.2);
+        }
+
+        .current-instruction {
+            animation: glow 0.8s ease;
+            background-color: rgba(0, 255, 0, 0.3);
         }
     </style>
 </head>
 <body>
     <h1>iMaCoMpUtERussy - 6502 CPU Emulator</h1>
-    
+
     <div class="main-container">
-        <!-- Left Panel - Console -->
+        <!-- Left Panel - Registers -->
         <div class="panel">
             <div class="panel-header">
-                <span>🖥 Console Output</span>
+                <span>🎛 Registers</span>
             </div>
             <div class="panel-content">
-                <div id="console-display" style="height: 100%; overflow-y: auto; font-size: 11px;"></div>
+                <div id="registers" class="register-display">
+                    <!-- CPU registers will be rendered here -->
+                </div>
             </div>
         </div>
-        
+
         <!-- Center Panel - Terminal -->
         <div class="panel">
             <div class="panel-header">
                 <span>📟 Interactive Terminal</span>
+                <button id="clear-terminal-btn">🗑️</button>
             </div>
             <div class="panel-content">
-                <div id="terminal-display"></div>
+                <div class="terminal-section" style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
+                    <div id="console-display" class="console-display"></div>
+                    <div id="terminal-display" class="terminal-display"></div>
+                </div>
                 <div style="margin-top: 10px;">
                     <input type="text" id="terminal-input" placeholder="Type commands here..." />
                     <button id="send-btn">Send</button>
-                    <button id="clear-terminal-btn">Clear</button>
                 </div>
             </div>
         </div>
-        
-        <!-- Right Panel - Video Display -->
+
+        <!-- Right Panel - Video & Memory -->
         <div class="panel">
             <div class="panel-header">
-                <span>📺 Video Display</span>
-                <button onclick="updateVideo()">Update</button>
+                <span>📺 Dashboard</span>
             </div>
-            <div class="panel-content">
-                <canvas id="video-canvas" width="320" height="240"></canvas>
-                <div style="margin-top: 10px; font-size: 10px;">
-                    Video Buffer: $0200-$05FF (32x24 pixels)
+            <div class="panel-content" style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="dashboard-section">
+                    <h3>Video Display</h3>
+                    <canvas id="video-canvas" width="320" height="240"></canvas>
+                    <div style="margin-top: 5px; font-size: 10px;">
+                        Video Buffer: $0200-$05FF (32x24 pixels)
+                    </div>
+                </div>
+
+                <div class="dashboard-section">
+                    <div class="memory-section">
+                        <h3>Memory (Video Buffer)</h3>
+                        <div id="memory-display" class="memory-display"></div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Controls -->
+
+    <!-- Bottom Controls -->
     <div class="controls">
-        <button id="step-btn">⏭ Step</button>
-        <button id="reset-btn">🔄 Reset</button>
-        <button id="run-btn">▶ Run/Stop</button>
-        <input type="file" id="asm-file" accept=".asm" style="margin-left: 20px;">
-        <button id="load-btn">Load ASM</button>
-        <select id="sample-select">
-            <option value="">Select Sample...</option>
-            <option value="echo">Echo Test</option>
-            <option value="graphics-demo">Graphics Demo</option>
-            <option value="hello-terminal">Hello Terminal</option>
-        </select>
-        <button id="load-sample-btn">Load Sample</button>
+        <div class="control-group">
+            <h3>CPU Control</h3>
+            <button id="step-btn">⏭ Step</button>
+            <button id="reset-btn">🔄 Reset</button>
+            <button id="run-btn">▶ Run/Stop</button>
+        </div>
+
+        <div class="control-group">
+            <h3>Program Loading</h3>
+            <input type="file" id="asm-file" accept=".asm" style="margin-left: 20px;" aria-label="Load assembly file">
+            <button id="load-btn">Load ASM</button>
+            <select id="sample-select" aria-label="Select sample program">
+                <option value="">Select Sample...</option>
+                <option value="hello-world">Hello World</option>
+                <option value="echo">Echo Test</option>
+                <option value="graphics-demo">Graphics Demo</option>
+                <option value="hello-terminal">Hello Terminal</option>
+            </select>
+            <button id="load-sample-btn">Load Sample</button>
+        </div>
+
+        <div class="control-group">
+            <h3>Workspace</h3>
+            <button id="save-workspace-btn">💾 Save State</button>
+            <button id="restore-workspace-btn">📁 Load State</button>
+        </div>
+    </div>
+
+    <!-- Status Display -->
+    <div class="status-display" id="status-display">
+        System initialized and ready
     </div>
 
     <script type="module">
         // Global variables
-        let cpu, memory, assembler;
+        let cpu, memory, assembler, feedbackSystem, onboardingSystem;
         let runInterval = null;
-        
+
         // Initialize everything
         async function initialize() {
             try {
                 console.log('Starting initialization...');
-                
+
                 // Import modules
                 const { iMaCoMpUtERussyMemory } = await import('./js/memory.js');
                 const { iMaCoMpUtERussyCPU } = await import('./js/cpu.js');
                 const { iMaCoMpUtERussyAssembler } = await import('./js/assembler.js');
-                
+                const { initializeDebugger, initializeMemoryViewer } = await import('./js/ui/debugger.js');
+                const { UIFeedbackSystem } = await import('./js/ui/feedback-system.js');
+                const { OnboardingSystem } = await import('./js/ui/onboarding.js');
+
                 // Create instances
                 memory = new iMaCoMpUtERussyMemory();
                 cpu = new iMaCoMpUtERussyCPU({ memory });
                 assembler = new iMaCoMpUtERussyAssembler();
-                
+                feedbackSystem = new UIFeedbackSystem();
+
                 console.log('Core components created');
-                
+
                 // Make globally accessible
                 window.cpu = cpu;
                 window.memory = memory;
                 window.assembler = assembler;
+                window.feedbackSystem = feedbackSystem;
                 
+                // Initialize debugger (registers, memory viewer)
+                initializeDebugger('registers');
+                initializeMemoryViewer('memory-display');
+
+                // Initialize onboarding system
+                onboardingSystem = new OnboardingSystem();
+                onboardingSystem.initialize();
+                window.onboardingSystem = onboardingSystem;
+
+                // Add CPU step hook for feedback system
+                const originalStep = cpu.step.bind(cpu);
+                cpu.step = function() {
+                    const result = originalStep();
+
+                    // Update feedback system with current CPU state
+                    const currentState = {
+                        PC: cpu.PC,
+                        SP: cpu.SP,
+                        A: cpu.A,
+                        X: cpu.X,
+                        Y: cpu.Y,
+                        P: cpu.P,
+                        memory: {
+                            lastModified: result?.affectedMemory || []
+                        },
+                        lastInstruction: result?.instruction || null
+                    };
+
+                    feedbackSystem.updateCPUState(currentState);
+                    return result;
+                };
+
                 // Set up video display
                 window.updateVideo = function() {
                     const canvas = document.getElementById('video-canvas');
                     if (!canvas) return;
                     const ctx = canvas.getContext('2d');
-                    
+
                     // Clear canvas
                     ctx.fillStyle = '#000000';
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    
+
                     // Draw video buffer
                     for (let addr = 0x0200; addr <= 0x05FF; addr++) {
                         const value = memory.readByte(addr);
@@ -202,7 +376,7 @@
                             const offset = addr - 0x0200;
                             const x = (offset % 32) * 10;
                             const y = Math.floor(offset / 32) * 10;
-                            
+
                             let color = '#00ff00';
                             switch(value) {
                                 case 1: color = '#00ff00'; break; // Green
@@ -212,28 +386,28 @@
                                 case 5: color = '#ff00ff'; break; // Magenta
                                 default: color = '#ffffff'; break; // White
                             }
-                            
+
                             ctx.fillStyle = color;
                             ctx.fillRect(x, y, 10, 10);
                         }
                     }
                 };
-                
+
                 // Set test pixels
                 memory.writeByte(0x0200, 1);
                 memory.writeByte(0x021F, 2);
                 memory.writeByte(0x02E0, 3);
                 memory.writeByte(0x02FF, 1);
                 updateVideo();
-                
+
                 // Set up terminal
                 initializeTerminal();
-                
-                // Set up buttons
+
+                // Set up button event listeners
                 setupButtons();
                 
                 console.log('Initialization complete!');
-                logToConsole('System initialized and ready');
+                updateStatus('System initialized and ready');
                 
             } catch (error) {
                 console.error('Initialization failed:', error);
@@ -247,6 +421,23 @@
                 consoleDisplay.innerHTML += `[${timestamp}] ${message}\n`;
                 consoleDisplay.scrollTop = consoleDisplay.scrollHeight;
             }
+        }
+
+        function updateStatus(message, type = 'info') {
+            const statusElement = document.getElementById('status-display');
+            if (statusElement) {
+                statusElement.textContent = message;
+                statusElement.className = `status-display ${type}`;
+
+                // Auto-hide successful messages after 3 seconds
+                if (type === 'success') {
+                    setTimeout(() => {
+                        statusElement.textContent = '';
+                        statusElement.className = 'status-display';
+                    }, 3000);
+                }
+            }
+            logToConsole(message);
         }
         
         function writeToTerminal(text, color = '#ffffff') {
@@ -299,12 +490,12 @@
             document.getElementById('step-btn').addEventListener('click', () => {
                 if (cpu && cpu.running) {
                     cpu.step();
-                    logToConsole('CPU step executed');
+                    updateStatus('CPU step executed', 'info');
                 } else {
-                    logToConsole('CPU not running - load a program first');
+                    updateStatus('CPU not running - load a program first', 'error');
                 }
             });
-            
+
             // Reset button
             document.getElementById('reset-btn').addEventListener('click', () => {
                 if (runInterval) {
@@ -314,19 +505,28 @@
                 if (cpu) {
                     cpu.reset();
                     cpu.running = false;
-                    logToConsole('CPU reset');
+                    updateStatus('CPU reset', 'info');
+                }
+                // Save workspace state before reset
+                if (onboardingSystem) {
+                    onboardingSystem.saveWorkspace();
+                }
+
+                // Reset feedback system
+                if (feedbackSystem) {
+                    feedbackSystem.reset();
                 }
                 updateVideo();
             });
-            
+
             // Run button
             document.getElementById('run-btn').addEventListener('click', () => {
                 if (!cpu) return;
-                
+
                 if (runInterval) {
                     clearInterval(runInterval);
                     runInterval = null;
-                    logToConsole('CPU execution stopped');
+                    updateStatus('CPU execution stopped', 'info');
                 } else {
                     cpu.running = true;
                     runInterval = setInterval(() => {
@@ -338,7 +538,7 @@
                             runInterval = null;
                         }
                     }, 16); // ~60 FPS
-                    logToConsole('CPU execution started');
+                    updateStatus('CPU execution started', 'success');
                 }
             });
             
@@ -362,13 +562,75 @@
                         cpu.PC = result.startAddress;
                         cpu.running = true;
                         
-                        logToConsole(`Loaded ${sample}.asm at $${result.startAddress.toString(16).toUpperCase()}`);
+                        updateStatus(`Loaded ${sample}.asm at $${result.startAddress.toString(16).toUpperCase()}`, 'success');
                         updateVideo();
                     } else {
-                        logToConsole(`Assembly failed: ${result.error}`);
+                        updateStatus(`Assembly failed: ${result.error}`, 'error');
                     }
                 } catch (error) {
-                    logToConsole(`Failed to load ${sample}: ${error.message}`);
+                    updateStatus(`Failed to load ${sample}: ${error.message}`, 'error');
+                }
+            });
+
+            // Load ASM button
+            document.getElementById('load-btn').addEventListener('click', async () => {
+                const fileInput = document.getElementById('asm-file');
+                const file = fileInput?.files[0];
+                if (!file) {
+                    updateStatus('Please select an ASM file first', 'error');
+                    return;
+                }
+
+                try {
+                    const content = await file.text();
+                    const result = assembler.assemble(content);
+                    if (result.success) {
+                        // Load into memory
+                        result.bytecode.forEach((byte, index) => {
+                            memory.writeByte(result.startAddress + index, byte);
+                        });
+
+                        // Set PC to start address
+                        cpu.PC = result.startAddress;
+                        cpu.running = true;
+
+                        updateStatus(`Loaded ${file.name} at $${result.startAddress.toString(16).toUpperCase()}`, 'success');
+                        updateVideo();
+                        // Reset UI feedback
+                        if (feedbackSystem) {
+                            feedbackSystem.reset();
+                        }
+                    } else {
+                        updateStatus(`Assembly failed: ${result.error}`, 'error');
+                    }
+                } catch (error) {
+                    updateStatus(`Failed to load ${file.name}: ${error.message}`, 'error');
+                }
+            });
+
+            // Save workspace button
+            document.getElementById('save-workspace-btn').addEventListener('click', () => {
+                if (onboardingSystem) {
+                    onboardingSystem.saveWorkspace();
+                    updateStatus('Workspace saved successfully', 'success');
+                } else {
+                    updateStatus('Workspace system not initialized', 'error');
+                }
+            });
+
+            // Restore workspace button
+            document.getElementById('restore-workspace-btn').addEventListener('click', () => {
+                if (onboardingSystem) {
+                    const restored = onboardingSystem.restoreWorkspace();
+                    if (restored) {
+                        // Refresh the UI
+                        updateVideo();
+                        updateStatus('Workspace restored successfully', 'success');
+                    } else {
+                        updateStatus('No saved workspace found', 'info');
+                    }
+                } else {
+                    updateStatus('Workspace system not initialized', 'error');
                 }
             });
         }

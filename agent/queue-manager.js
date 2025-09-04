@@ -37,6 +37,7 @@ class PromptQueue {
     this.backupDir = options.backupDir || path.join(__dirname, '..', 'data', 'backups');
     this.maxBackups = options.maxBackups || 10;
     this.autoSave = options.autoSave !== false;
+    this.aiProcessor = options.aiProcessor || null;
 
     this.queue = [];
     this.loadQueue();
@@ -367,12 +368,34 @@ class PromptQueue {
     for (const task of matchingTasks) {
       try {
         await this.updatePromptStatus(task.id, 'processing');
-        // Here you could implement the actual processing logic
-        // For now, we'll just mark as completed
-        await this.updatePromptStatus(task.id, 'completed', {});
+
+        let result = {};
+
+        // If AI processor is available, process the task
+        if (this.aiProcessor && task.type !== 'custom') {
+          const aiResult = await this.aiProcessor.generateWithBestModel(task.prompt, task.type);
+          result = {
+            aiModel: aiResult.model,
+            aiResponse: aiResult.response,
+            aiSuccess: aiResult.success,
+            timestamp: aiResult.timestamp
+          };
+        } else {
+          // Fallback - just mark as processed without AI
+          result = {
+            processed: true,
+            note: 'AI processor not available',
+            timestamp: new Date().toISOString()
+          };
+        }
+
+        await this.updatePromptStatus(task.id, 'completed', result);
         processed++;
       } catch (error) {
-        await this.updatePromptStatus(task.id, 'failed', { error: error.message });
+        await this.updatePromptStatus(task.id, 'failed', {
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
       }
     }
 
