@@ -16,7 +16,9 @@
 
 ## 🖼️ See the System in Action
 
-![iMaCoMpUtERussy Main Interface](screenshots/imacomputerussy-main-interface)
+![iMaCoMpUtERussy Main Interface](screenshots/imacomputerussy-main-interface.png)
+
+![Emulator Debugger UI](screenshots/4.png)
 
 *The legendary iMaCoMpUtERussy running autonomous code generation - AI creates assembly programs in real-time, executes them on the 8-bit emulator, provides interactive debugging, and continuous optimization.*
 
@@ -98,6 +100,27 @@ End-to-end validation of AI-emulator interactions:
 - **Health Monitoring**: System status and metric collection
 - **CI/CD Integration**: Automated testing in deployment pipelines
 ## Recent Updates
+### 2025-09-06: Documentation & Development Process Improvements
+- Enhanced README with emulator-specific setup instructions, UI feature documentation, and usage examples
+- Created comprehensive ARCHITECTURE.md documenting code structure, data flow, and extension points
+- Updated sample programs with detailed comments and terminal I/O examples
+- Established CHANGELOG.md for version tracking and release notes
+- Added JSDoc-style documentation throughout core modules (cpu.js, memory.js, mcp-client.js, UI components)
+
+### 2025-09-06: Core Emulator Improvements
+- Implemented Run/Step/Stop/Reset controls with breakpoint integration
+- Added file load/save functionality for assembly programs and memory states
+- Enhanced I/O system with bidirectional terminal communication
+- Added basic breakpoint management and memory inspector
+- Optimized CPU execution with async run loop and UI responsiveness
+
+### 2025-09-06: UI Enhancements
+- Implemented modular panel system with independent show/hide toggles
+- Added fixed bottom toolbar with checkboxes for panel visibility control
+- Created resizable layout using CSS Grid and Flexbox for flexible arrangement
+- Added theme and font settings panel with CSS variable customization
+- Implemented localStorage persistence for all UI configurations and layouts
+
 ### 2025-09-04
 - Phase 3.1 Multi-Model MCP Integration: Completed.
   Implemented multi-model support with task-based selection.
@@ -107,6 +130,9 @@ End-to-end validation of AI-emulator interactions:
   Implemented CPU cleanup methods and MCP client LRU cache.
 - Phase 1.1 Port Conflict Resolution & Graceful Shutdown: Completed.
   Implemented port resolution utility, sequential service startup, and shutdown handlers.
+
+### 2025-09-04: Image Archiving
+- Archived generated images to images/archive/ for organization
 
 ## 📋 **Quick Start**
 
@@ -135,33 +161,83 @@ npm run autonomous-system-start
 # - Queue Server: http://localhost:8002
 ```
 
-### Basic Usage Examples
+### Emulator Usage Examples
+
+#### Loading and Running Programs via UI
+
+1. **Load Sample Program**:
+   - Open Assembly Panel (toggle via bottom toolbar)
+   - Click "Load Sample Program" dropdown
+   - Select "Hello World" and click Load
+   - Watch Memory Viewer update with program at $0600
+   - Click "Run" to execute - see output in Interactive Terminal
+
+2. **Step-Through Debugging**:
+   - Load any program using Assembly Panel
+   - Click "Step" button repeatedly
+   - Watch Registers panel: PC advances, A register changes
+   - Observe Memory Viewer: data locations update
+   - Set breakpoint at $060A, then Run - execution pauses at breakpoint
+
+3. **File I/O Operations**:
+   - Click "Load Assembly File" in Debugger Panel
+   - Select your .asm file (e.g., custom program)
+   - Program assembles and loads automatically
+   - Use "Save Memory Dump" to export current memory state as hex file
+
+#### Programmatic Control via MCP API
+
+For automated testing or external integration:
 
 ```bash
-# Add a generation task
-curl -X POST http://localhost:8002/queue/add \
+# Reset CPU and load Hello World program
+curl -X POST http://localhost:8001/mcp/assemble/load-and-run \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "Create a hello world program that displays a message",
-    "type": "generation",
-    "priority": "high"
+    "source": ".org $0600\nLDA #72\nSTA $F1\nHLT",
+    "resetCPU": true,
+    "maxSteps": 10
   }'
 
-# Monitor queue status
-curl http://localhost:8002/queue/stats
+# Step through execution and get state
+curl -X POST http://localhost:8001/mcp/cpu/step \
+  -H "Content-Type: application/json" \
+  -d '{"steps": 1}'
 
-# Get system health
-curl http://localhost:8001/mcp/health
+# Read memory after execution
+curl http://localhost:8001/mcp/memory/read?address=0xF1&size=1
 
-# Generate code from natural language
-curl -X POST http://localhost:8001/mcp/programs/generate \
+# Generate new program from natural language
+curl -X POST http://localhost:8001/mcp/ai/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "Write an assembly program that counts from 1 to 10",
-    "optimize": true,
-    "test": true
+    "prompt": "Write assembly code that outputs the numbers 1 to 5 to terminal",
+    "task": "code",
+    "options": {"maxTokens": 300}
   }'
 ```
+
+#### Advanced UI Features Usage
+
+**Customizing Your Layout**:
+1. **Toggle Panels**: Use bottom toolbar checkboxes to show/hide specific panels
+2. **Rearrange Panels**: Drag panel headers (⋮⋮ handle) to reorder
+3. **Resize Panels**: Drag corner handles (↘) to adjust size
+4. **Save Layout**: Click "Save Layout" in sidebar - persists across sessions
+5. **Reset Layout**: "Reset All Panels" returns to default arrangement
+
+**Theme Customization**:
+1. Open Settings Panel from sidebar
+2. Select font family (Monaco, Consolas, or custom)
+3. Adjust theme colors using CSS variables
+4. Changes apply immediately and persist via localStorage
+
+**Breakpoint Debugging**:
+1. Enter address (e.g., "060A") in Breakpoint field
+2. Click "Add" to set breakpoint
+3. Run program - execution pauses at breakpoint address
+4. Use "Step" to continue single instruction at a time
+5. "List" shows all active breakpoints, "Remove" clears specific ones
 
 ## 🎯 **Usage Examples**
 

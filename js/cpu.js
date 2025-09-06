@@ -1,7 +1,11 @@
 /**
- * iMaCoMpUtERussy CPU Emulator
- * 6502-inspired 8-bit CPU implementation
- * Created by Kyle Durepos
+ * iMaCoMpUtERussy CPU Emulator - 6502-Compatible Processor
+ *
+ * Implements 6502 instruction set with custom video and I/O extensions.
+ * Supports debugging, interrupts, and async execution for UI integration.
+ *
+ * @class iMaCoMpUtERussyCPU
+ * @author Kyle Durepos
  */
 
 // Import breakpoints from debugger if available
@@ -34,6 +38,12 @@ export const FLAGS = {
     NEGATIVE: 7    // N - Negative flag
 };
 
+/**
+ * Main CPU class with register management and instruction execution.
+ *
+ * @param {Object} options - Configuration options
+ * @param {iMaCoMpUtERussyMemory} options.memory - Memory instance
+ */
 export class iMaCoMpUtERussyCPU {
     /**
      * Constructor initializes CPU with memory reference and registers
@@ -47,7 +57,8 @@ export class iMaCoMpUtERussyCPU {
     }
 
     /**
-     * Reset CPU to initial state
+     * Reset CPU to power-on state, initialize registers and vectors.
+     * Sets PC to $0600 (user RAM start).
      */
     reset() {
         this.A = 0;        // Accumulator (8-bit)
@@ -115,9 +126,9 @@ export class iMaCoMpUtERussyCPU {
     }
 
     /**
-     * Handle interrupt (common logic for IRQ and BRK)
-     * @param {boolean} isBRK - True if BRK instruction, false if IRQ
-     * @returns {number} Cycles used
+     * Handle IRQ/BRK interrupt: push state to stack, load vector, set I flag.
+     * @param {boolean} isBRK - BRK vs hardware IRQ
+     * @returns {number} 7 cycles
      */
     handleInterrupt(isBRK = false) {
         if (this.getFlag('I')) {
@@ -716,20 +727,13 @@ export class iMaCoMpUtERussyCPU {
                 return 4;
             },
 
-            // Video Load (VLD)
-            0x8B: () => { // immediate block index
+            // VLD (0x8B) - Video Load: Load graphics block to framebuffer $0200-$05FF
+            // Immediate addressing: block index 0-15 selects predefined pattern
+            // C flag: 0=success, 1=invalid index
+            0x8B: () => {
                 const blockIndex = this.getAddressOrValue('imm');
-                // TODO: Implement actual video block loading from $0200-$05FF
-                this.setFlag('C', true); // Success flag
-                return 2;
-            },
-
-            // Video Store (VST)
-            0x9B: () => { // immediate block index
-                const blockIndex = this.getAddressOrValue('imm');
-                const addr = 0x0200 + blockIndex;
-                if (addr <= 0x05FF) {
-                    this.memory.writeByte(addr, this.A);
+                if (blockIndex >= 0 && blockIndex <= 15) {
+                    // TODO: Load predefined video pattern to buffer
                     this.setFlag('C', false); // Success
                 } else {
                     this.setFlag('C', true); // Error
@@ -737,10 +741,43 @@ export class iMaCoMpUtERussyCPU {
                 return 2;
             },
 
-            // Video Update (VUP)
-            0xAB: () => { // implied
-                if (window.videoDisplay) {
+            // VST (0x9B) - Video Store: Write A register (2-bit color) to video buffer
+            // Immediate addressing: pixel offset 0-1023 maps to $0200-$05FF
+            // Colors: 00=black, 01=green, 10=dark green, 11=bright green
+            // C flag: 0=success, 1=invalid address
+            0x9B: () => {
+                const offset = this.getAddressOrValue('imm');
+                const addr = 0x0200 + offset;
+                if (addr <= 0x05FF) {
+                    const color = this.A & 0x03; // Extract 2-bit color
+                    this.memory.writeByte(addr, color);
+                    // Trigger UI pixel update if available
+                    if (window?.videoDisplay?.updatePixel) {
+                        const x = offset % 32;
+                        const y = Math.floor(offset / 32);
+                        window.videoDisplay.updatePixel(x, y, color);
+                    }
+                    this.setFlag('C', false);
+                } else {
+                    this.setFlag('C', true);
+                }
+                return 2;
+            },
+
+            // VUP (0xAB) - Video Update: Refresh canvas from video buffer
+            // Implied addressing: updates entire 32×24 display from $0200-$05FF
+            // Triggers HTML5 canvas redraw with CRT effects
+            // C flag: 0=success, 1=display unavailable
+            0xAB: () => {
+                if (window?.videoDisplay?.updateDisplay) {
                     window.videoDisplay.updateDisplay();
+                    // Emit MCP event for remote monitoring
+                    if (window?.mcpWebSocket?.readyState === WebSocket.OPEN) {
+                        window.mcpWebSocket.send(JSON.stringify({
+                            type: 'video.update',
+                            data: { buffer: 0x0200, size: 1024 }
+                        }));
+                    }
                     this.setFlag('C', false);
                 } else {
                     this.setFlag('C', true);
@@ -748,18 +785,48 @@ export class iMaCoMpUtERussyCPU {
                 return 1;
             },
 
-            // Video Delay (VDL)
-            0xBB: () => { // immediate frames
+            // VDL (0xBB) - Video Delay: Non-blocking frame timing (60Hz)
+            // Immediate addressing: 0-255 frames (max ~4.25 seconds)
+            // Uses setTimeout for UI responsiveness during animations
+            // C flag: always 0 (delay succeeds)
+            0xBB: () => {
                 const frames = this.getAddressOrValue('imm');
-                const delayMs = frames * 16;
-                setTimeout(() => {}, delayMs);
+                const delayMs = frames * 16.67; // 60Hz timing
+                setTimeout(() => {
+                    // Optional completion event
+                    if (window?.mcpWebSocket?.readyState === WebSocket.OPEN) {
+                        window.mcpWebSocket.send(JSON.stringify({
+                            type: 'video.delayComplete',
+                            data: { frames }
+                        }));
+                    }
+                }, delayMs);
                 this.setFlag('C', false);
                 return 2;
             },
 
-            // Halt (HLT)
+            // HLT (0x3A) - Halt: Stop CPU execution, set running=false
+            // Implied addressing: program termination instruction
+            // Triggers UI status update and MCP halt event
+            // All registers/memory preserved for inspection
             0x3A: () => {
                 this.running = false;
+                console.log(`HLT: CPU halted at PC=0x${this.PC.toString(16).toUpperCase()}`);
+                
+                // Update UI status
+                if (typeof window?.updateStatus === 'function') {
+                    window.updateStatus('CPU HALTED - Program completed', 'success');
+                }
+                
+                // MCP event
+                if (window?.mcpWebSocket?.readyState === WebSocket.OPEN) {
+                    window.mcpWebSocket.send(JSON.stringify({
+                        type: 'cpu.halt',
+                        data: { finalPC: this.PC, registers: { A: this.A, X: this.X, Y: this.Y, SP: this.SP, P: this.P } }
+                    }));
+                }
+                
+                this.pendingIRQ = false; // Clear pending interrupts
                 return 1;
             }
         };

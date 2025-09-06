@@ -1,9 +1,11 @@
 /**
- * iMaCoMpUtERussy memory module
- * ES module exporting iMaCoMpUtERussyMemory
- * Kyle Durepos - iMaCoMpUtERussy Project
+ * iMaCoMpUtERussy Memory Management System
  *
- * TODO: ROM persistence, memory-mapped devices (MMIO), bounds-checked fast paths, performance tuning.
+ * Provides 64KB memory space with defined regions, ROM protection, and event notification.
+ * Supports memory-mapped I/O for terminal ($F0-F2) and video buffer ($0200-$05FF).
+ *
+ * @module iMaCoMpUtERussyMemory
+ * @author Kyle Durepos
  */
 
 // Region constants
@@ -23,6 +25,29 @@ const MEMORY_SIZE = 0x10000; // 65536
 /**
  * iMaCoMpUtERussyMemory
  * @class
+ */
+/**
+ * Memory class implementing 64KB address space with region management.
+ *
+ * Features:
+ * - 0x0000-0xFFFF address space (65536 bytes)
+ * - Configurable ROM protection (0x8000+)
+ * - Read/write event listeners for UI updates
+ * - Memory-mapped I/O integration
+ * - Bounds checking and validation
+ *
+ * Memory Regions:
+ * - 0x0000-0x00FF: Zero Page (variables, I/O registers $F0-$F2)
+ * - 0x0100-0x01FF: Stack (interrupt handling, subroutine calls)
+ * - 0x0200-0x05FF: Video Buffer (32×24 pixel graphics, 1KB)
+ * - 0x0600-0x7FFF: User RAM (programs and data)
+ * - 0x8000-0xFFFF: ROM (read-only video/system routines)
+ *
+ * @class iMaCoMpUtERussyMemory
+ * @param {Object} [options] - Configuration options
+ * @param {Uint8Array} [options.buffer] - Pre-allocated memory buffer
+ * @param {boolean} [options.readonlyROM=false] - Enforce ROM write protection
+ * @param {boolean} [options.allowRomWrites=false] - Bypass ROM protection for testing
  */
 export class iMaCoMpUtERussyMemory {
   /**
@@ -145,9 +170,14 @@ export class iMaCoMpUtERussyMemory {
   }
 
   /**
-   * Read a byte from memory.
-   * @param {number} addr - 0..0xFFFF
-   * @returns {number} 0..255
+   * Read single byte from memory address with event notification.
+   *
+   * Triggers read listeners for UI updates and debugging.
+   * Performs bounds checking and address masking.
+   *
+   * @param {number} addr - Memory address (0x0000-0xFFFF)
+   * @returns {number} Byte value (0-255)
+   * @throws {RangeError} If address out of bounds
    */
   readByte(addr) {
     this._checkAddr(addr);
@@ -206,11 +236,16 @@ export class iMaCoMpUtERussyMemory {
   }
 
   /**
-   * Load a program (Uint8Array or ArrayLike<number>) into memory at addr.
-   * Writes until buffer end (0xFFFF) or input end.
-   * @param {number} addr
-   * @param {Uint8Array|Array<number>} byteArray
-   * @returns {number} bytes written
+   * Load assembled program into memory at specified address.
+   *
+   * Writes bytes sequentially from start address until end of memory or input.
+   * Respects ROM write protection - ROM writes are ignored or throw errors.
+   * Used by assembler and file loader for program execution.
+   *
+   * @param {number} addr - Starting memory address (typically 0x0600)
+   * @param {Uint8Array|ArrayLike<number>} byteArray - Program machine code
+   * @returns {number} Number of bytes successfully written
+   * @throws {TypeError} If byteArray is invalid
    */
   loadProgram(addr, byteArray) {
     this._checkAddr(addr);
