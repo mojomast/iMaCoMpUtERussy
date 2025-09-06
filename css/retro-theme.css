@@ -1,4 +1,181 @@
-/* Retro CRT theme for VideoStorage-8 Emulator */
+/* Retro CRT theme for VideoStorage-8 Emulator with CSS Variables */
+:root {
+  --bg-primary: #000000;
+  --bg-secondary: #111111;
+  --bg-panel: rgba(0, 0, 0, 0.9);
+  --bg-header: rgba(0, 255, 0, 0.1);
+  --text-primary: #00ff00;
+  --text-secondary: #00cc00;
+  --border-primary: #00ff00;
+  --border-secondary: #006600;
+  --font-family: 'Courier New', monospace;
+  --font-size: 12px;
+  --font-color: #00ff00;
+}
+
+:root.light-theme {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f0f0f0;
+  --bg-panel: #ffffff;
+  --bg-header: rgba(0, 0, 0, 0.05);
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --border-primary: #000000;
+  --border-secondary: #666666;
+  --font-color: #000000;
+}
+
+body.dark-theme {
+  --bg-primary: #000000;
+  --bg-secondary: #111111;
+  --bg-panel: rgba(0, 0, 0, 0.9);
+  --bg-header: rgba(0, 255, 0, 0.1);
+  --text-primary: #00ff00;
+  --text-secondary: #00cc00;
+  --border-primary: #00ff00;
+  --border-secondary: #006600;
+}
+
+body.light-theme {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f0f0f0;
+  --bg-panel: #ffffff;
+  --bg-header: rgba(0, 0, 0, 0.05);
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --border-primary: #000000;
+  --border-secondary: #666666;
+}
+
+/* Apply variables to common elements */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  margin: 0;
+  padding: 20px;
+}
+
+/* Panel styles using CSS variables */
+.panel {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-primary);
+  color: var(--text-primary);
+}
+
+.panel-header {
+  background: var(--bg-header);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.panel-content {
+  color: var(--text-primary);
+}
+
+/* Button styles using CSS variables */
+button {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+button:hover {
+  background-color: var(--text-primary);
+  color: var(--bg-primary);
+}
+
+/* Input and select elements */
+input, select, textarea {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+/* Status displays */
+.status-display {
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+  background-color: rgba(0, 255, 0, 0.05); /* Keep retro green tint for dark theme */
+}
+
+.status-display.success {
+  background-color: rgba(0, 255, 0, 0.1);
+}
+
+.status-display.error {
+  border-color: #ff4444;
+  background-color: rgba(255, 68, 68, 0.1);
+  color: #ffaaaa;
+}
+
+/* Toolbar using CSS variables */
+#panel-toolbar.toolbar {
+  background-color: var(--bg-primary);
+  border-top: 2px solid var(--border-primary);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.toolbar-toggle {
+  background: rgba(0, 255, 0, 0.05);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+}
+
+.toggle-label {
+  color: var(--text-primary);
+}
+
+/* Light theme adjustments */
+body.light-theme button:hover {
+  background-color: var(--text-primary);
+  color: var(--bg-primary);
+}
+
+body.light-theme .status-display {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+body.light-theme .panel {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+body.light-theme .panel:hover {
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+}
+
+/* TODO: Implement full CRT effects - scanlines, phosphor glow, curvature, flicker */
+/* Apply CRT effects to all elements when needed */
+.crt-effect {
+  /* Scanlines */
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  
+  /* Phosphor glow for text */
+  text-shadow: 0 0 5px currentColor;
+  
+  /* Slight flicker animation */
+  animation: crt-flicker 0.1s infinite alternate;
+}
+
+@keyframes crt-flicker {
+  0% { opacity: 1; }
+  100% { opacity: 0.98; }
+}
+
+/* Header styling using CSS variables */
+header h1 {
+  text-align: center;
+  text-shadow: 0 0 10px var(--text-primary);
+  color: var(--text-primary);
+}
+
+/* Section borders using CSS variables */
+section {
+  border: 1px solid var(--border-primary);
+}
 
 /* Basic dark background with green text */
 body {

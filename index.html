@@ -62,10 +62,53 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="panel" style="display: none;">
+            <div class="panel-header">
+                <span>UI Settings</span>
+            </div>
+            <div class="panel-content">
+                <!-- Settings content will be populated by JS -->
+                <div style="padding: 20px; color: #00ff00; font-family: monospace;">
+                    <p>Loading settings interface...</p>
+                </div>
+            </div>
+        </div>
     </div>
     
     <div id="panel-sidebar">
         <!-- Sidebar for layout controls -->
+    </div>
+    
+    <!-- Fixed bottom toolbar for panel toggles -->
+    <div id="panel-toolbar" class="toolbar">
+        <div class="toolbar-content">
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-memory" checked data-panel="memory-viewer">
+                <span class="toggle-label">Memory</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-debugger" checked data-panel="debugger">
+                <span class="toggle-label">Registers</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-video" checked data-panel="video-manager">
+                <span class="toggle-label">Video</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-assembly" data-panel="assembly-panel">
+                <span class="toggle-label">Assembly</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-mcp-input" data-panel="mcp-input-panel">
+                <span class="toggle-label">MCP Input</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-mcp-logs" data-panel="mcp-display">
+                <span class="toggle-label">MCP Logs</span>
+            </label>
+        </div>
     </div>
     
     <script type="module" src="js/app.js"></script>

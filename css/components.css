@@ -1,13 +1,19 @@
 /* Component styles for VideoStorage-8 Emulator */
 
-/* Panel collapse functionality */
-.panel.collapsed .panel-content {
-    display: none;
-}
-
+/* Panel header styling (collapse arrows removed) */
 .panel-header {
-    cursor: pointer;
     user-select: none;
+    -webkit-user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(0, 255, 0, 0.1);
+    border-bottom: 1px solid #00ff00;
+    min-height: 30px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: #00ff00;
 }
 
 .toggle-btn {
@@ -27,11 +33,98 @@
     padding: 20px;
 }
 
-/* Main layout */
-main {
+/* Main layout with CSS Grid for resizable panels */
+#main-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-rows: repeat(auto-fit, minmax(200px, auto));
+    gap: 15px;
+    padding: 20px;
+    min-height: calc(100vh - 120px); /* Account for toolbar height */
+    box-sizing: border-box;
+}
+
+#main-layout .panel {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    position: relative;
+    background: rgba(0, 0, 0, 0.9);
+    border: 2px solid #00ff00;
+    border-radius: 4px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    min-width: 250px;
+    min-height: 150px;
+    resize: both; /* Enable CSS resize */
+    max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 140px);
+}
+
+#main-layout .panel:hover {
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+    z-index: 10;
+}
+
+#main-layout .panel.panel-collapsed {
+    grid-row: span 1;
+    grid-column: span 1;
+    min-height: 50px;
+}
+
+#main-layout .panel .panel-header {
+    background: rgba(0, 255, 0, 0.1);
+    padding: 10px;
+    border-bottom: 1px solid #00ff00;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move; /* For drag handle */
+    user-select: none;
+    -webkit-user-select: none;
+    min-height: 30px;
+}
+
+#main-layout .panel .panel-content {
+    flex: 1;
+    overflow: auto;
+    padding: 10px;
+    display: block;
+}
+
+#main-layout .panel.collapsed .panel-content {
+    display: none;
+}
+
+/* Responsive grid adjustments */
+@media (max-width: 768px) {
+    #main-layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+        gap: 10px;
+        padding: 10px;
+    }
+    
+    #main-layout .panel {
+        min-width: 100%;
+        max-width: 100%;
+        min-height: 200px;
+    }
+}
+
+@media (max-width: 480px) {
+    #main-layout {
+        padding: 5px;
+        gap: 5px;
+    }
+    
+    #main-layout .panel .panel-header {
+        padding: 8px;
+        font-size: 12px;
+    }
+    
+    #main-layout .panel .panel-content {
+        padding: 5px;
+    }
 }
 
 /* Section layout */
@@ -1172,15 +1265,158 @@ button.loading::after {
     background: rgba(0, 255, 0, 0.4);
 }
 
-/* Dynamic Panel Styles */
-#layout-container .panel {
-    position: absolute;
-    resize: both;
-    overflow: auto;
-    min-width: 200px;
-    min-height: 150px;
-    z-index: 1;
+/* Dynamic Panel Styles - Enhanced with Grid integration */
+#main-layout .panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: rgba(0, 0, 0, 0.9);
+    border: 2px solid #00ff00;
+    border-radius: 4px;
+    overflow: hidden;
     transition: all 0.3s ease;
+    min-width: 250px;
+    min-height: 150px;
+    resize: both;
+    max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 140px);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+#main-layout .panel:hover {
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+    z-index: 10;
+}
+
+#main-layout .panel .panel-header {
+    background: rgba(0, 255, 0, 0.1);
+    padding: 10px;
+    border-bottom: 1px solid #00ff00;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+    user-select: none;
+    -webkit-user-select: none;
+    min-height: 30px;
+    flex-shrink: 0;
+}
+
+#main-layout .panel .panel-header:hover {
+    background: rgba(0, 255, 0, 0.2);
+}
+
+#main-layout .panel .panel-content {
+    flex: 1;
+    overflow: auto;
+    padding: 10px;
+    display: block;
+    min-height: 100px;
+}
+
+#main-layout .panel .panel-footer {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 8px;
+    border-top: 1px solid #333;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+/* Panel resize handle enhancement */
+#main-layout .panel .resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    cursor: se-resize;
+    background: rgba(0, 255, 0, 0.3);
+    border: 1px solid #00ff00;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    user-select: none;
+    -webkit-user-select: none;
+    z-index: 20;
+    transition: background 0.2s ease;
+}
+
+#main-layout .panel .resize-handle:hover {
+    background: rgba(0, 255, 0, 0.5);
+}
+
+/* Grid-based panel stacking for mobile */
+@media (max-width: 768px) {
+    #main-layout .panel {
+        grid-column: 1 / -1;
+        width: 100%;
+        max-width: none;
+        min-width: 100%;
+        resize: vertical; /* Only vertical resize on mobile */
+    }
+    
+    #main-layout .panel .resize-handle {
+        width: 100%;
+        height: 15px;
+        right: 0;
+        cursor: ns-resize;
+    }
+    
+    #main-layout .panel .resize-handle::after {
+        content: '↕';
+        font-size: 10px;
+    }
+}
+
+/* Panel drop zone enhancement */
+#main-layout .panel.drop-zone {
+    border: 3px dashed #00ff00 !important;
+    background: rgba(0, 255, 0, 0.1) !important;
+    opacity: 0.8;
+}
+
+/* Panel dragging state */
+#main-layout .panel.dragging {
+    opacity: 0.7;
+    transform: rotate(3deg) scale(1.02);
+    z-index: 1000;
+    box-shadow: 0 10px 30px rgba(0, 255, 0, 0.5);
+}
+
+/* Smooth panel transitions */
+#main-layout .panel {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#main-layout .panel.showing {
+    animation: panelSlideIn 0.3s ease-out;
+}
+
+@keyframes panelSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+#main-layout .panel.hiding {
+    animation: panelSlideOut 0.2s ease-in;
+}
+
+@keyframes panelSlideOut {
+    from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-10px) scale(0.95);
+    }
 }
 
 #layout-container .panel:hover {
@@ -1263,5 +1499,93 @@ button.loading::after {
 @keyframes fadeInOut {
     0%, 100% { opacity: 0; }
     50% { opacity: 1; }
+}
+
+/* Fixed bottom toolbar styles */
+#panel-toolbar.toolbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: #000;
+    border-top: 2px solid #00ff00;
+    box-shadow: 0 -2px 10px rgba(0, 255, 0, 0.3);
+    z-index: 1000;
+    font-family: 'Courier New', monospace;
+    padding: 10px 0;
+}
+
+.toolbar-content {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+    flex-wrap: wrap;
+}
+
+.toolbar-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(0, 255, 0, 0.05);
+    border: 1px solid #00ff00;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: #00ff00;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.toolbar-toggle:hover {
+    background: rgba(0, 255, 0, 0.1);
+    box-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+}
+
+.toolbar-toggle input[type="checkbox"] {
+    margin: 0;
+    accent-color: #00ff00;
+    width: 16px;
+    height: 16px;
+}
+
+.toggle-label {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: #00ff00;
+    user-select: none;
+}
+
+/* Responsive toolbar */
+@media (max-width: 768px) {
+    .toolbar-content {
+        gap: 10px;
+        padding: 0 10px;
+    }
+    
+    .toolbar-toggle {
+        padding: 6px 8px;
+        font-size: 11px;
+    }
+    
+    .toggle-label {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    .toolbar-content {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .toolbar-toggle {
+        width: 100%;
+        justify-content: center;
+    }
 }
 }

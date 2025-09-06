@@ -57,20 +57,62 @@ async function initializeApp() {
         window.feedbackSystem = new UIFeedbackSystem();
         // Add showToast method for MCPError notifications
         window.feedbackSystem.showToast = function(message, type = 'info') {
-            // Simple toast implementation
+            // Simple toast implementation with theme support
             const toast = document.createElement('div');
+            const bgColor = type === 'error' ? '#ff4444' : type === 'success' ? '#44ff44' : '#4444ff';
+            const textColor = type === 'error' ? '#ffffff' : type === 'success' ? '#000000' : '#ffffff';
             toast.style.cssText = `
-                position: fixed; top: 20px; right: 20px; background: ${type === 'error' ? '#ff4444' : type === 'success' ? '#44ff44' : '#4444ff'};
-                color: white; padding: 12px 20px; border-radius: 4px; z-index: 10000;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-family: monospace;
+                position: fixed; top: 20px; right: 20px; background: ${bgColor};
+                color: ${textColor}; padding: 12px 20px; border-radius: 4px; z-index: 10000;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-family: var(--font-family);
+                font-size: var(--font-size);
             `;
             toast.textContent = `${type.toUpperCase()}: ${message}`;
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 5000);
         };
         console.log('📢 Feedback system initialized with MCPError toast support');
+        
+        // Initialize settings panel early for CSS variable application
+        console.log('⚙️ Initializing settings panel early for CSS variables...');
+        try {
+            const settingsPanel = initializeSettingsPanel();
+            if (settingsPanel) {
+                // Listen for settings updates globally
+                window.addEventListener('settingsUpdated', (e) => {
+                    console.log('Global settings updated:', e.detail);
+                    // Apply CSS variables dynamically
+                    const root = document.documentElement;
+                    root.style.setProperty('--ui-theme', e.detail.theme);
+                    root.style.setProperty('--ui-font-family', e.detail.fontFamily);
+                    root.style.setProperty('--ui-font-size', e.detail.fontSize);
+                    root.style.setProperty('--ui-font-color', e.detail.fontColor);
+                    
+                    // Update body class for theme
+                    document.body.className = e.detail.theme + '-theme';
+                    
+                    // Re-apply toasts and other dynamic elements
+                    if (window.feedbackSystem) {
+                        // Update any existing toasts (simplified)
+                        document.querySelectorAll('.toast').forEach(toast => {
+                            toast.style.fontFamily = 'var(--font-family)';
+                            toast.style.fontSize = 'var(--font-size)';
+                        });
+                    }
+                    
+                    // Notify other components
+                    console.log('✅ CSS variables updated globally');
+                });
+                
+                // Apply initial settings
+                settingsPanel.applyAllSettings();
+                console.log('✅ Settings panel initialized with dynamic CSS support');
+            }
+        } catch (error) {
+            console.error('❌ Early settings panel initialization failed:', error);
+        }
 
-        // Initialize layout manager for dynamic panels
+        // Initialize layout manager for dynamic panels with enhanced panel control
         if (typeof LayoutManager !== 'undefined') {
             window.layoutManager = new LayoutManager();
             const mainLayout = document.getElementById('main-layout');
@@ -78,6 +120,26 @@ async function initializeApp() {
             if (mainLayout) {
                 window.layoutManager.init('#main-layout', '#panel-sidebar');
                 console.log('🖼️ Layout manager initialized for emulator panels');
+                
+                // Set initial visibility states for all panels using layout manager
+                const panelsToShow = ['debugger', 'memory-viewer', 'video-manager'];
+                panelsToShow.forEach(panelId => {
+                    const panelInfo = window.layoutManager.panels.find(p => p.id === panelId);
+                    if (panelInfo) {
+                        window.layoutManager.togglePanel(panelInfo, true);
+                    }
+                });
+                
+                // Hide MCP panels initially
+                const mcpPanels = ['mcp-input-panel', 'mcp-display'];
+                mcpPanels.forEach(panelId => {
+                    const panelInfo = window.layoutManager.panels.find(p => p.id === panelId);
+                    if (panelInfo) {
+                        window.layoutManager.togglePanel(panelInfo, false);
+                    }
+                });
+                
+                console.log('✅ Panel visibility initialized via layout manager');
             } else {
                 console.warn('⚠ Main layout not found for layout manager');
             }
@@ -85,23 +147,46 @@ async function initializeApp() {
             console.warn('⚠ LayoutManager not available');
         }
 
-        // Initialize debugger UI
+        // Initialize debugger UI with layout manager integration
         const debuggerElement = document.getElementById('debugger');
         console.log('Debugger element found:', !!debuggerElement);
         if (debuggerElement) {
             console.log('Calling initializeDebugger...');
             initializeDebugger('debugger');
-            console.log('✓ Debugger initialized');
+            
+            // Integrate with layout manager for show/hide control
+            if (window.layoutManager) {
+                const debuggerPanel = window.layoutManager.panels.find(p => p.id === 'debugger');
+                if (debuggerPanel) {
+                    // Add show/hide methods to debugger module
+                    window.debuggerShow = () => window.layoutManager.togglePanel(debuggerPanel, true);
+                    window.debuggerHide = () => window.layoutManager.togglePanel(debuggerPanel, false);
+                    console.log('✅ Debugger integrated with layout manager');
+                }
+            }
+            
+            console.log('✓ Debugger initialized with layout integration');
         } else {
             console.warn('⚠ Debugger element not found');
         }
 
-        // Initialize memory viewer UI
+        // Initialize memory viewer UI with layout manager integration
         const memoryViewerElement = document.getElementById('memory-viewer');
         console.log('Memory viewer element found:', !!memoryViewerElement);
         if (memoryViewerElement) {
             console.log('Calling initializeMemoryViewer...');
             initializeMemoryViewer('memory-viewer');
+            
+            // Integrate with layout manager for show/hide control
+            if (window.layoutManager) {
+                const memoryPanel = window.layoutManager.panels.find(p => p.id === 'memory-viewer');
+                if (memoryPanel) {
+                    // Add show/hide methods to memory viewer module
+                    window.memoryViewerShow = () => window.layoutManager.togglePanel(memoryPanel, true);
+                    window.memoryViewerHide = () => window.layoutManager.togglePanel(memoryPanel, false);
+                    console.log('✅ Memory viewer integrated with layout manager');
+                }
+            }
             
             // Ensure enhanced memory viewer features are active
             if (window.refreshMemoryDisplay) {
@@ -119,39 +204,73 @@ async function initializeApp() {
             } else {
               console.warn('Memory viewer refresh not available');
             }
-            console.log('✓ Enhanced memory viewer initialized with AI activity log panel');
+            console.log('✓ Enhanced memory viewer initialized with layout integration');
         } else {
             console.warn('⚠ Memory viewer element not found');
         }
 
-        // Initialize video manager UI
+        // Initialize video manager UI with layout manager integration
         const videoManagerElement = document.getElementById('video-manager');
         console.log('Video manager element found:', !!videoManagerElement);
         if (videoManagerElement) {
             console.log('Calling initializeVideoManager...');
             initializeVideoManager('video-manager');
-            console.log('✓ Video manager initialized');
+            
+            // Integrate with layout manager for show/hide control
+            if (window.layoutManager) {
+                const videoPanel = window.layoutManager.panels.find(p => p.id === 'video-manager');
+                if (videoPanel) {
+                    // Add show/hide methods to video manager module
+                    window.videoManagerShow = () => window.layoutManager.togglePanel(videoPanel, true);
+                    window.videoManagerHide = () => window.layoutManager.togglePanel(videoPanel, false);
+                    console.log('✅ Video manager integrated with layout manager');
+                }
+            }
+            
+            console.log('✓ Video manager initialized with layout integration');
         } else {
             console.warn('⚠ Video manager element not found');
         }
 
-        // Initialize natural language input
+        // Initialize natural language input with layout manager integration
         const nlInputElement = document.getElementById('mcp-input-panel');
         console.log('Natural language input element found:', !!nlInputElement);
         if (nlInputElement) {
             console.log('Calling initializeNaturalLanguageInput...');
-            initializeNaturalLanguageInput();
-            console.log('✓ Natural language input initialized');
+            const nlInput = initializeNaturalLanguageInput();
+            
+            // Integrate with layout manager for show/hide control
+            if (window.layoutManager) {
+                const nlPanel = window.layoutManager.panels.find(p => p.id === 'mcp-input-panel');
+                if (nlPanel) {
+                    // Add show/hide methods to natural language input module
+                    window.nlInputShow = () => window.layoutManager.togglePanel(nlPanel, true);
+                    window.nlInputHide = () => window.layoutManager.togglePanel(nlPanel, false);
+                    console.log('✅ Natural language input integrated with layout manager');
+                }
+            }
+            
+            console.log('✓ Natural language input initialized with layout integration');
         } else {
             console.warn('⚠ Natural language input element not found');
         }
     
-        // Initialize assembly panel
+        // Initialize assembly panel with layout manager integration
         console.log('🔧 Initializing assembly panel...');
         try {
             const assemblyPanel = initializeAssemblyPanel();
             if (assemblyPanel) {
-                console.log('✓ Assembly panel initialized successfully');
+                // Integrate with layout manager for show/hide control
+                if (window.layoutManager) {
+                    const assemblyPanelInfo = window.layoutManager.panels.find(p => p.id === 'assembly-panel');
+                    if (assemblyPanelInfo) {
+                        // Add show/hide methods to assembly panel module
+                        window.assemblyShow = () => window.layoutManager.togglePanel(assemblyPanelInfo, true);
+                        window.assemblyHide = () => window.layoutManager.togglePanel(assemblyPanelInfo, false);
+                        console.log('✅ Assembly panel integrated with layout manager');
+                    }
+                }
+                console.log('✓ Assembly panel initialized with layout integration');
             } else {
                 console.warn('⚠ Assembly panel initialization returned null');
             }
@@ -253,16 +372,77 @@ if (document.readyState === 'loading') {
 // Export for manual initialization if needed
 export { initializeApp, initializeMCPClient };
 
-// Global hook for MCP events to ensure memory viewer updates
+// Global hook for MCP events to ensure memory viewer updates with enhanced layout integration
 if (typeof window !== 'undefined') {
   window.addEventListener('load', () => {
-    // Ensure layout manager integrates the memory viewer panel
+    // Ensure layout manager integrates all panels
     if (window.layoutManager) {
-      const memoryPanel = document.getElementById('memory-viewer');
-      if (memoryPanel) {
-        window.layoutManager.makePanelResizable(memoryPanel);
-        console.log('Memory viewer integrated as resizable panel via layout manager');
-      }
+      // Make all panels resizable
+      window.layoutManager.panels.forEach(panelInfo => {
+        window.layoutManager.makePanelResizable(panelInfo.element);
+      });
+      console.log('All panels integrated as resizable via layout manager');
+      
+      // Create unified show/hide API for all panels
+      window.showPanel = (panelId) => {
+        const panelInfo = window.layoutManager.panels.find(p => p.id === panelId);
+        if (panelInfo) {
+          window.layoutManager.togglePanel(panelInfo, true);
+          console.log(`Panel ${panelId} shown`);
+        }
+      };
+      
+      window.hidePanel = (panelId) => {
+        const panelInfo = window.layoutManager.panels.find(p => p.id === panelId);
+        if (panelInfo) {
+          window.layoutManager.togglePanel(panelInfo, false);
+          console.log(`Panel ${panelId} hidden`);
+        }
+      };
+      
+      window.togglePanel = (panelId) => {
+        const panelInfo = window.layoutManager.panels.find(p => p.id === panelId);
+        if (panelInfo) {
+          const newState = !panelInfo.visible;
+          window.layoutManager.togglePanel(panelInfo, newState);
+          console.log(`Panel ${panelId} toggled to ${newState ? 'visible' : 'hidden'}`);
+        }
+      };
+      
+      // Initialize panel states from saved layout
+      window.layoutManager.loadLayout(JSON.parse(localStorage.getItem('uiLayout') || '[]'));
+      console.log('✅ Unified panel show/hide API created and layout loaded');
+      
+      // Initialize bottom toolbar toggles
+      const toolbarToggles = document.querySelectorAll('#panel-toolbar input[type="checkbox"]');
+      toolbarToggles.forEach(toggle => {
+        toggle.addEventListener('change', (e) => {
+          const panelId = e.target.dataset.panel;
+          if (e.target.checked) {
+            window.showPanel(panelId);
+          } else {
+            window.hidePanel(panelId);
+          }
+          
+          // Update layout manager state and save
+          const panelInfo = window.layoutManager.panels.find(p => p.id === panelId);
+          if (panelInfo) {
+            panelInfo.visible = e.target.checked;
+          }
+          window.layoutManager.saveLayout();
+          
+          console.log(`Toolbar toggle: ${panelId} = ${e.target.checked}`);
+        });
+        
+        // Set initial checkbox state based on panel visibility
+        const panelId = toggle.dataset.panel;
+        const panelInfo = window.layoutManager.panels.find(p => p.id === panelId);
+        if (panelInfo) {
+          toggle.checked = panelInfo.visible;
+        }
+      });
+      
+      console.log(`✅ Bottom toolbar initialized with ${toolbarToggles.length} toggles`);
     }
     
     // Test MCP action to verify logging (optional, for development)
