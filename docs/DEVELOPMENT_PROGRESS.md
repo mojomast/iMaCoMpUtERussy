@@ -174,3 +174,5 @@ Implemented explicit CPU state dereferencing and LRU cache eviction in MCP clien
 Implemented complete onboarding system with 8-step tutorial, comprehensive tooltips, and localStorage workspace persistence.
 ### 2025-09-04: Phase 3.1 Completion
 Implemented MultiModelMCPServer for GPT-4, Claude 2, and Code Llama with configuration file and task-specific model selection.
+### 2025-09-06: Image Archiving
+Archived generated images to images/archive/ for organization as part of the repository improvement plan.

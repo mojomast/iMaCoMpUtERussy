@@ -1,0 +1,58 @@
+<![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<instructions>
+  <tool_usage>
+    <primary_tool>
+      Use the MCP ai.generate tool for all image generation requests. This is the exclusive method for creating images in this mode.
+    </primary_tool>
+    <mcp_ai_generate>
+      To generate an image:
+      1. Craft a detailed prompt incorporating the user's description and nano banana style elements
+      2. Send MCP request to ai.generate with the prompt
+      3. Specify output format as PNG
+      4. Request filename suggestion based on content (e.g., "cpu-step-flowchart.png")
+      5. Handle the response: save the generated image to images/ directory
+    </mcp_ai_generate>
+    <generate_image_tool>
+      The generate_image tool should be used for:
+      - Saving the MCP-generated image content to the filesystem
+      - Path: images/descriptive-filename.png
+      - Ensure the images/ directory exists (create if needed)
+      - Validate image format and quality before finalizing
+    </generate_image_tool>
+    <prompt_crafting>
+      <structure>
+        Every prompt must include:
+        1. Technical subject (e.g., "CPU instruction execution flowchart")
+        2. Visual style (e.g., "professional technical diagram, clean lines, illustrative")
+        3. Nano banana elements (e.g., "with banana-shaped arrows for process flow, nano-banana icons for components")
+        4. Output specifications (e.g., "PNG format, high resolution, white background")
+        5. Professional constraints (e.g., "technical documentation style, not cartoonish")
+      </structure>
+      <examples>
+        <example>
+          <input>User: "A flowchart of CPU step execution"</input>
+          <prompt>"Create a professional technical flowchart illustrating CPU step execution process. Use clean lines and standard flowchart symbols. Incorporate nano banana style elements: banana-shaped arrows to indicate process flow direction, small nano-banana icons as component markers. Maintain professional appearance suitable for technical documentation. Output as high-resolution PNG with white background."</prompt>
+        </example>
+        <example>
+          <input>User: "UI mockup for emulator debugger"</input>
+          <prompt>"Generate a professional UI mockup for a retro computer emulator debugger interface. Include typical elements: register displays, memory viewer, instruction panel, breakpoint controls. Add subtle nano banana styling: banana-curve shaped buttons, nano-banana progress indicators. Clean, professional design for technical documentation. High-resolution PNG format."</prompt>
+        </example>
+      </examples>
+    </prompt_crafting>
+    <batch_processing>
+      For multiple image descriptions:
+      1. Process each description sequentially
+      2. Generate numbered filenames (e.g., batch-1-diagram.png, batch-2-flowchart.png)
+      3. Track generation status for each item
+      4. Provide summary completion with all generated files listed
+      5. Use update_todo_list to track batch progress if complex
+    </batch_processing>
+    <error_handling>
+      If MCP ai.generate fails:
+      - Retry with modified prompt (simplify nano banana elements if needed)
+      - Fall back to simpler technical illustration without whimsical elements
+      - Log the issue and inform user of limitations
+      - Do not use external browser tools - stay within MCP capabilities
+    </error_handling>
+  </tool_usage>
+</instructions>]]>

@@ -65,6 +65,7 @@ Get up and running with the iMaCoMpUtERussy interactive emulator in minutes!
 
 ## 🖥️ Understanding the Interface
 
+![Emulator debugger UI with highlighted controls](images/emulator-debugger-ui-screenshot.png)
 ### Debugger Section (Top Left)
 - **File loading controls** for your own .asm files
 - **Sample program selector** with educational examples

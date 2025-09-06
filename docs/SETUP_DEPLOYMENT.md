@@ -271,6 +271,7 @@ Required for YouTube integration and video uploads/downloads.
    Client ID: your-client-id.apps.googleusercontent.com
    Client Secret: your-client-secret
    ```
+![Google Cloud OAuth setup screenshots](images/google-cloud-oauth-setup-screenshots.png)
 
 ### Step 4: Configure API Restrictions
 

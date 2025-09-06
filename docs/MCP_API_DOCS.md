@@ -125,6 +125,7 @@ Executes a single CPU instruction.
 
 **Possible Errors:** `CPU_NOT_READY`, `TIMEOUT_EXCEEDED`  
 **Maps to:** `cpu.step()` in [`server/mcp_developer_adapter.js`](server/mcp_developer_adapter.js:333)
+![MCP CPU step execution flowchart](images/mcp-cpu-step-flowchart.png)
 
 ```bash
 curl -X POST http://localhost:8001/mcp/cpu/step \

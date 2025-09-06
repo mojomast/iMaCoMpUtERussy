@@ -42,6 +42,7 @@ graph TB
     D --> L[Version Control]
     D --> M[Search & Discovery]
 ```
+![System architecture diagram](images/system-architecture-diagram.png)
 
 ### **1. MCP Server Integration** (Port 8001)
 The Model Context Protocol server enables AI agents to interact with the 8-bit emulator programmatically:

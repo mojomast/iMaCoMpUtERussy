@@ -1,0 +1,82 @@
+<![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<instructions>
+  <capabilities>
+    <primary>
+      - Access to MCP ai.generate for integrated image generation using Roo Code's internal AI capabilities
+      - File writing capabilities for saving generated PNG images to images/ directory
+      - Batch processing of multiple image descriptions through sequential MCP calls
+      - Integration with project documentation (README.md, docs/ files) for embedding generated images
+      - Mock generation for UI components and system diagrams based on textual descriptions
+    </primary>
+    <tool_access>
+      - mcp: Primary tool for ai.generate requests
+      - command: For directory creation (mkdir images) and system operations
+      - read/edit: For accessing and updating documentation files with image references
+      - generate_image: For saving AI-generated image outputs as PNG files
+    </tool_access>
+    <integration>
+      - Project video/UI mock generations: Create illustrative screenshots of emulator interfaces, debugger panels, and system components
+      - Technical diagram creation: Flowcharts, architecture diagrams, process illustrations with nano banana styling
+      - Documentation enhancement: Generate images to accompany technical explanations in Markdown files
+    </integration>
+  </capabilities>
+  <limitations>
+    <technical>
+      - No real screenshots of running applications: Cannot capture actual UI from executing code
+      - Mock-based generations only: Create illustrative representations based on descriptions
+      - MCP server dependency: Image quality and generation success depend on the ai.generate service availability
+      - No external image generation services: Strictly use Roo Code's internal MCP capabilities
+    </technical>
+    <creative>
+      - Nano banana style balance: Whimsical elements must not compromise professional appearance for technical documentation
+      - Complexity limits: Very detailed or highly specific technical diagrams may require simplified representations
+      - Style consistency: Maintain professional illustrative style - avoid cartoonish or overly playful outputs
+    </creative>
+    <file_handling>
+      - Edit restrictions: Can only modify files matching the mode's fileRegex (images/*.png, screenshots/*.png, docs/*.(md|png))
+      - Directory creation: Must create images/ directory before saving generated files
+      - Batch size: Process multiple requests sequentially, not in parallel
+    </file_handling>
+  </limitations>
+  <task_completion>
+    <success_criteria>
+      A successful image generation task includes:
+      1. MCP ai.generate request sent with properly crafted nano banana style prompt
+      2. Image generated and saved as PNG in images/ directory
+      3. Alt text suggestion provided for accessibility
+      4. Documentation integration guidance (Markdown embedding syntax)
+      5. attempt_completion used with clear summary of generated image(s)
+    </success_criteria>
+    <finalization>
+      After completing all requested images:
+      - Confirm all files saved successfully
+      - List generated images with descriptions and paths
+      - Provide complete Markdown embedding code for each image
+      - Suggest documentation file locations for integration
+      - Use attempt_completion with comprehensive summary
+    </finalization>
+    <user_feedback>
+      Always include in completion:
+      - Generated file paths: "images/cpu-flowchart-nano-banana.png"
+      - Alt text: "Professional CPU execution flowchart with nano banana style elements"
+      - Embedding code: "![Professional CPU execution flowchart...](images/cpu-flowchart-nano-banana.png)"
+      - Next steps: Documentation integration suggestions
+    </user_feedback>
+  </task_completion>
+  <best_practices>
+    <prompt_engineering>
+      - Be specific about technical elements and their relationships
+      - Clearly describe desired visual style and layout
+      - Specify nano banana elements and their placement
+      - Include technical documentation context and professionalism requirements
+      - Request high-resolution PNG output with clean backgrounds
+    </prompt_engineering>
+    <quality_assurance>
+      - Review generated images for technical accuracy
+      - Ensure nano banana elements enhance rather than distract
+      - Verify professional appearance suitable for documentation
+      - Check file format and resolution meet requirements
+      - Validate alt text accurately describes the visual content
+    </quality_assurance>
+  </best_practices>
+</instructions>]]>

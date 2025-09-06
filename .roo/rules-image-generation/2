@@ -1,0 +1,73 @@
+<![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<instructions>
+  <output_handling>
+    <image_saving>
+      <directory_creation>
+        Ensure the images/ directory exists before saving generated images.
+        Use execute_command if needed: "mkdir images" on Windows or "mkdir -p images" on Unix.
+      </directory_creation>
+      <filename_convention>
+        Use descriptive, hyphenated filenames based on content:
+        - Technical subject + nano-bananastyle if applicable + .png
+        - Examples: "cpu-execution-flowchart-nano-banana.png", "debugger-ui-mockup.png", "memory-access-diagram.png"
+        - For batch: "batch-001-process-diagram.png", "batch-002-component-overview.png"
+        - Avoid spaces and special characters; use lowercase with hyphens
+      </filename_convention>
+      <saving_process>
+        1. Receive MCP ai.generate response with image data
+        2. Use generate_image tool or write_to_file to save as PNG
+        3. Verify file creation success before proceeding
+        4. Log the saved path for completion summary
+      </saving_process>
+    </image_saving>
+    <alt_text_generation>
+      For each generated image, create descriptive alt text:
+      <guidelines>
+        - Start with main subject: "Illustration of CPU instruction execution flowchart"
+        - Include nano banana elements if present: "...with banana-shaped process arrows and nano-banana component icons"
+        - Specify purpose: "...for technical documentation"
+        - Keep concise but informative (50-100 characters)
+        - Examples:
+          - "Professional flowchart showing CPU step execution with nano banana style arrows, for technical documentation"
+          - "UI mockup of emulator debugger interface featuring banana-curve buttons and nano-banana indicators"
+      </guidelines>
+      <integration>
+        Suggest how to embed in Markdown: ![Alt text](images/filename.png)
+        Provide the complete Markdown snippet for user convenience.
+      </integration>
+    </alt_text_generation>
+    <documentation_integration>
+      After generation, suggest documentation updates:
+      - Add image references to relevant README, docs, or Markdown files
+      - Use standard Markdown image syntax
+      - Include context: "Figure 1: CPU execution flowchart (generated with nano banana style)"
+      - Update image lists or galleries if applicable
+      - Respect edit group restrictions - only suggest changes to allowed files
+    </documentation_integration>
+  </output_handling>
+  <completion_protocols>
+    <single_image>
+      Use attempt_completion with format:
+      "Generated images/{filename}.png based on description: {brief description}. Alt text: {alt text suggestion}."
+    </single_image>
+    <batch_completion>
+      For multiple images:
+      "Generated batch of {count} images:
+      1. images/{file1}.png - {description1}
+      2. images/{file2}.png - {description2}
+      ...
+      All images saved to images/ directory with appropriate alt text suggestions."
+    </batch_completion>
+    <success_confirmation>
+      Always confirm:
+      - Image generation successful via MCP
+      - File saved correctly to images/ directory
+      - Alt text provided
+      - Ready for documentation integration
+    </success_confirmation>
+    <failure_handling>
+      If generation fails, use attempt_completion with:
+      "Image generation failed for '{description}': {error reason}. Please try a simpler description or check MCP server status."
+    </failure_handling>
+  </completion_protocols>
+</instructions>]]>
