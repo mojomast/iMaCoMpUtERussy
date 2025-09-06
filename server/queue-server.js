@@ -13,6 +13,28 @@ import PromptQueue from '../agent/queue-manager.js';
 import { resolvePort } from '../lib/port-utils.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import winston from 'winston';
+import { MCPError } from './mcp_errors.js';
+
+// Create winston logger
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'queue-server' },
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    }),
+    new winston.transports.File({ filename: 'logs/queue-server.log' })
+  ]
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,16 +54,9 @@ app.use(express.json());
 let queueManager;
 
 function initializeQueue() {
-  try {
-    queueManager = new PromptQueue({
-      queueFile: path.join(__dirname, '..', 'data', 'queue.json'),
-      backupDir: path.join(__dirname, '..', 'data', 'backups')
-    });
-    console.log('Prompt queue system initialized');
-  } catch (error) {
-    console.error('Error initializing queue system:', error);
-    throw error;
-  }
+  // Queue initialization disabled - consolidated to mcp_server.js to prevent duplicate instances and race conditions
+  logger.warn('Queue initialization disabled in queue-server.js - use mcp_server.js for queue management');
+  queueManager = null;
 }
 
 // Success response helper
@@ -81,11 +96,18 @@ app.post('/queue/add', asyncHandler(async (req, res) => {
   }
 
   try {
-    const taskId = await queueManager.addPrompt(prompt, { type, priority, metadata });
-    console.log(`Queue add - taskId:${taskId}, type:${type}, priority:${priority}`);
+    logger.debug('Adding task to queue', { type, priority, promptLength: prompt.length });
+    const taskId = await Promise.race([
+      queueManager.addPrompt(prompt, { type, priority, metadata }),
+      new Promise((_, reject) => setTimeout(() => reject(new MCPError('QUEUE_ADD_TIMEOUT', 'Task add operation timed out', null, 408)), 30000))
+    ]);
+    logger.info('Task added to queue successfully', { taskId, type, priority });
     res.json(successResponse({ taskId, message: 'Task added to queue' }));
   } catch (error) {
-    console.error('Queue add error:', error.message);
+    logger.error('Queue add error', { error: error.message, stack: error.stack, type, priority });
+    if (error instanceof MCPError) {
+      return res.status(error.httpStatus || 500).json(errorResponse(error.code, error.message));
+    }
     res.status(500).json(errorResponse('INTERNAL_ERROR', 'Failed to add task to queue'));
   }
 }));
@@ -95,20 +117,28 @@ app.get('/queue/list', asyncHandler(async (req, res) => {
   const { status, type, priority, search } = req.query;
 
   try {
+    logger.debug('Listing queue tasks', { status, type, priority, search });
     const filter = {};
     if (status) filter.status = status;
     if (type) filter.type = type;
     if (priority) filter.priority = priority;
     if (search) filter.search = search;
 
-    const tasks = await queueManager.listPrompts(filter);
+    const tasks = await Promise.race([
+      queueManager.listPrompts(filter),
+      new Promise((_, reject) => setTimeout(() => reject(new MCPError('QUEUE_LIST_TIMEOUT', 'Task list operation timed out', null, 408)), 10000))
+    ]);
+    logger.info('Queue tasks listed successfully', { count: tasks.length, filter });
     res.json(successResponse({
       tasks,
       count: tasks.length,
       filter: filter
     }));
   } catch (error) {
-    console.error('Queue list error:', error.message);
+    logger.error('Queue list error', { error: error.message, stack: error.stack, filter });
+    if (error instanceof MCPError) {
+      return res.status(error.httpStatus || 500).json(errorResponse(error.code, error.message));
+    }
     res.status(500).json(errorResponse('INTERNAL_ERROR', 'Failed to list tasks'));
   }
 }));

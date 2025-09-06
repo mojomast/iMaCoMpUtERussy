@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the saved state"
+        },
+        "bytesSaved": {
+          "type": "integer",
+          "description": "Number of bytes saved"
+        },
+        "range": {
+          "type": "object",
+          "description": "Memory range that was saved",
+          "properties": {
+            "start": {
+              "type": "integer"
+            },
+            "end": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "savedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when state was saved"
+        }
+      },
+      "required": ["name", "bytesSaved", "savedAt"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["success"],
+  "additionalProperties": false
+}

@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Generate Response",
+  "description": "Response schema for AI generation via MCP",
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "description": "Whether the generation was successful"
+    },
+    "data": {
+      "type": "object",
+      "description": "Generated content when successful",
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "The generated text content"
+        },
+        "model": {
+          "type": "string",
+          "description": "The model used for generation"
+        },
+        "tokensUsed": {
+          "type": "integer",
+          "description": "Number of tokens used in generation",
+          "minimum": 0
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of generation"
+        }
+      },
+      "required": ["content", "model"],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "description": "Error details when generation failed",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Error code"
+        },
+        "message": {
+          "type": "string",
+          "description": "Error message"
+        }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["success"],
+  "oneOf": [
+    {
+      "properties": {
+        "success": { "const": true },
+        "data": { "not": { "required": ["error"] } }
+      },
+      "required": ["data"]
+    },
+    {
+      "properties": {
+        "success": { "const": false },
+        "error": { "not": { "required": ["data"] } }
+      },
+      "required": ["error"]
+    }
+  ],
+  "additionalProperties": false
+}

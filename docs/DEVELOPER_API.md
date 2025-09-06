@@ -5,24 +5,30 @@ Complete API documentation for iMaCoMpUtERussy's emulator, interactive terminal,
 ## Table of Contents
 
 - [Interactive Emulator API](#interactive-emulator-api)
-  - [CPU Emulation](#cpu-emulation)
-  - [Memory System](#memory-system)
-  - [Assembly System](#assembly-system)
-  - [Interactive Terminal](#interactive-terminal)
+   - [CPU Emulation](#cpu-emulation)
+   - [Memory System](#memory-system)
+   - [Assembly System](#assembly-system)
+   - [Interactive Terminal](#interactive-terminal)
+   - [Interrupt System](#interrupt-system)
+- [MCP Server API](#mcp-server-api)
+   - [Video API Endpoints](#video-api-endpoints)
+   - [CPU Control API](#cpu-control-api)
+   - [Queue Management Consolidation](#queue-management-consolidation)
+   - [Validation](#validation)
 - [SteganographyEngine API](#steganographyengine-api)
-  - [Constructor](#constructor)
-  - [Core Methods](#core-methods)
-  - [Compression & ECC](#compression--ecc)
-  - [Capacity Estimation](#capacity-estimation)
+   - [Constructor](#constructor)
+   - [Core Methods](#core-methods)
+   - [Compression & ECC](#compression--ecc)
+   - [Capacity Estimation](#capacity-estimation)
 - [PlatformManager API](#platformmanager-api)
-  - [Authentication](#authentication)
-  - [Video Upload](#video-upload)
-  - [Video Download](#video-download)
-  - [Rate Limiting](#rate-limiting)
+   - [Authentication](#authentication)
+   - [Video Upload](#video-upload)
+   - [Video Download](#video-download)
+   - [Rate Limiting](#rate-limiting)
 - [VideoFrames API](#videoframes-api)
-  - [Frame Processing](#frame-processing)
-  - [Multi-Frame Operations](#multi-frame-operations)
-  - [Encoding & Decoding](#encoding--decoding)
+   - [Frame Processing](#frame-processing)
+   - [Multi-Frame Operations](#multi-frame-operations)
+   - [Encoding & Decoding](#encoding--decoding)
 - [Error Handling](#error-handling)
 - [Examples](#examples)
 
@@ -161,13 +167,170 @@ function sendToTerminal(text) {
     }
 }
 
-// Example: Read terminal input status
 function hasInput() {
     return (memory.readByte(0xF2) & 0x01) !== 0;
 }
+
+### Interrupt System
+
+The CPU supports hardware interrupts for enhanced I/O operations, with interrupt vectors mapped to memory addresses 0xFF00-0xFFFF.
+
+```javascript
+import { iMaCoMpUtERussyCPU } from './js/cpu.js';
+
+// Enable interrupts globally
+cpu.interruptsEnabled = true;
+
+// Trigger software interrupt at vector 0xFF00
+cpu.triggerInterrupt(0xFF00);
+
+// Hardware interrupt vectors
+const INTERRUPT_VECTORS = {
+    TIMER: 0xFF00,      // Timer interrupt
+    KEYBOARD: 0xFF02,    // Keyboard input interrupt
+    VIDEO_VSYNC: 0xFF04, // Video vertical sync interrupt
+    DISK_IO: 0xFF06      // Disk I/O completion interrupt
+};
 ```
 
 See [Interactive Terminal API Reference](./INTERACTIVE_TERMINAL_API.md) for complete programming guide.
+
+## MCP Server API
+
+The MCP (Machine Control Protocol) Server provides RESTful endpoints for controlling the emulator remotely, built with Express.js and AJV schema validation.
+
+### Video API Endpoints
+
+Control the video display system with the following endpoints:
+
+#### POST `/mcp/video/setPixel`
+
+Set a pixel at specified coordinates with a color value.
+
+```javascript
+// Request
+fetch('/mcp/video/setPixel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        x: 15,        // 0-31 horizontal position
+        y: 10,        // 0-31 vertical position
+        color: 2      // 0-15 color index (0=black, 1=green, 2=yellow, 3=red)
+    })
+});
+
+// Response
+{
+    "success": true,
+    "data": {
+        "address": 8207  // Memory address written (0x200F + offset)
+    }
+}
+```
+
+**Parameters:**
+- `x` (integer): Horizontal position 0-31
+- `y` (integer): Vertical position 0-31
+- `color` (integer): Color index 0-15
+
+**Memory Mapping:** Pixels are stored at addresses 0x2000-0x201F (top row) through 0x21E0-0x21FF (bottom row).
+
+#### POST `/mcp/video/clear`
+
+Clear the entire video display.
+
+```javascript
+fetch('/mcp/video/clear', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+});
+```
+
+#### POST `/mcp/video/update`
+
+Trigger a display update (refresh screen).
+
+```javascript
+fetch('/mcp/video/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+});
+```
+
+### CPU Control API
+
+#### POST `/mcp/cpu/reset`
+
+Reset the CPU to initial state.
+
+```javascript
+fetch('/mcp/cpu/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+});
+```
+
+#### POST `/mcp/cpu/step`
+
+Execute one CPU instruction.
+
+```javascript
+fetch('/mcp/cpu/step', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+});
+```
+
+#### POST `/mcp/cpu/run`
+
+Run CPU for specified number of steps.
+
+```javascript
+fetch('/mcp/cpu/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        maxSteps: 1000
+    })
+});
+```
+
+#### GET `/mcp/cpu/state`
+
+Get current CPU state.
+
+```javascript
+const response = await fetch('/mcp/cpu/state');
+const state = await response.json();
+console.log(state); // { PC: 1536, A: 0, X: 0, Y: 0, running: false }
+```
+
+### Queue Management Consolidation
+
+Queue management has been consolidated to prevent race conditions and duplicate instances:
+
+- **Single Instance**: Only `mcp_server.js` handles queue operations
+- **Server Startup**: `server.js` no longer spawns separate queue server
+- **Prevention**: Function `startQueueServer()` returns `Promise.resolve()` with disabled message
+- **Benefits**: Eliminates race conditions between concurrent queue operations
+- **Location**: Queue logic centralized in [`server/mcp_server.js`](server/mcp_server.js)
+
+### Validation
+
+Centralized validation using AJV JSON schemas in [`lib/validators.js`](lib/validators.js):
+
+```javascript
+import { validateRequest } from './lib/validators.js';
+
+// Validate incoming request data
+const validatedData = validateRequest(requestData, '/mcp/video/setPixel');
+
+// Custom validators for complex types
+const customValidators = {
+    dateTime: (value) => !isNaN(Date.parse(value)),  // Custom date-time validator
+    uuid: (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+};
+```
 
 ## SteganographyEngine API
 

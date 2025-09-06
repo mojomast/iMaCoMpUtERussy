@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the loaded state"
+        },
+        "bytesLoaded": {
+          "type": "integer",
+          "description": "Number of bytes loaded"
+        },
+        "targetAddress": {
+          "type": "integer",
+          "description": "Target address where state was loaded"
+        },
+        "range": {
+          "type": "object",
+          "description": "Memory range that was loaded",
+          "properties": {
+            "start": {
+              "type": "integer"
+            },
+            "end": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "loadedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when state was loaded"
+        }
+      },
+      "required": ["name", "bytesLoaded", "loadedAt"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["success"],
+  "additionalProperties": false
+}

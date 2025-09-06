@@ -7,6 +7,8 @@ import { SteganographyEngine } from '../steganography.js';
 import { PlatformManager } from '../platforms/youtube-api.js';
 import { extractFrameImageData, embedDataInFrame, extractDataFromFrame, createModifiedVideoBlob, splitPayloadAcrossFrames, embedAcrossFrames, recomposeFramesToBlob, calculateFrameCapacity } from './video-frames.js';
 import { assemble } from '../assembler.js';
+import { iMaCoMpUtERussyMemory } from '../memory.js';
+import { validatePixelCoordinates, validateColor } from '../../lib/validators.js';
 
 // Global variables for assembled .asm programs
 let lastAssembledProgram = null;
@@ -1108,3 +1110,194 @@ async function loadBytesToEmulator(bytes, origin, filename) {
  * - Error handling
  * - Settings configuration
  */
+
+// Video Manager for emulator display (memory-mapped at 0x8000-0x9FFF)
+const VIDEO_BUFFER_START = 0x8000;
+const VIDEO_BUFFER_END = 0x9FFF;
+const VIDEO_WIDTH = 128; // 128 pixels wide
+const VIDEO_HEIGHT = 64; // 64 pixels high (8192 bytes total)
+const BYTES_PER_ROW = VIDEO_WIDTH / 8; // 16 bytes per row (128 bits / 8 = 16 bytes)
+
+let videoCanvas = null;
+let ctx = null;
+let memory = null;
+
+/**
+ * VideoManager class for emulator video handling
+ */
+export class VideoManager {
+    constructor(canvasId = 'emulator-video-canvas', memoryInstance) {
+        // Create or get canvas
+        videoCanvas = document.getElementById(canvasId);
+        if (!videoCanvas) {
+            videoCanvas = document.createElement('canvas');
+            videoCanvas.id = canvasId;
+            videoCanvas.width = VIDEO_WIDTH;
+            videoCanvas.height = VIDEO_HEIGHT;
+            videoCanvas.style.border = '1px solid #00ff00';
+            videoCanvas.style.backgroundColor = 'black';
+            videoCanvas.style.imageRendering = 'pixelated'; // For crisp pixels
+            document.body.appendChild(videoCanvas); // Append to body or specific container
+        }
+        ctx = videoCanvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false; // Disable smoothing for pixel art
+
+        memory = memoryInstance || new iMaCoMpUtERussyMemory();
+    }
+
+    /**
+     * Set pixel at coordinates (x, y) to color using fillRect
+     * @param {number} x - X coordinate (0-127)
+     * @param {number} y - Y coordinate (0-63)
+     * @param {number} color - Color value (0-255, treated as grayscale)
+     */
+    setPixel(x, y, color) {
+        try {
+            validatePixelCoordinates(x, y);
+            const validatedColor = validateColor(color);
+
+            // Convert to RGB (grayscale for simplicity)
+            const pixelColor = `rgb(${validatedColor}, ${validatedColor}, ${validatedColor})`;
+            
+            // Use fillRect for single pixel
+            ctx.fillStyle = pixelColor;
+            ctx.fillRect(x, y, 1, 1);
+
+            console.log(`Video setPixel: (${x}, ${y}) = 0x${validatedColor.toString(16)}`);
+        } catch (error) {
+            console.error('Video setPixel error:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Update canvas from memory-mapped video buffer at 0x8000-0x9FFF
+     * Assumes 128x64 monochrome display, each byte represents 8 vertical pixels
+     */
+    update() {
+        try {
+            // Clear canvas to black first
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
+
+            // Read memory buffer
+            const bufferSize = VIDEO_BUFFER_END - VIDEO_BUFFER_START + 1;
+            const buffer = new Uint8Array(bufferSize);
+            for (let i = 0; i < bufferSize; i++) {
+                const addr = VIDEO_BUFFER_START + i;
+                buffer[i] = memory.readByte(addr);
+            }
+
+            // Render pixels (monochrome: bit 0 = on, others off; simple 1bpp)
+            for (let row = 0; row < VIDEO_HEIGHT; row++) {
+                const byteOffset = Math.floor(row / 8); // Each byte covers 8 rows
+                const bitOffset = row % 8;
+                const byteAddr = byteOffset * BYTES_PER_ROW + Math.floor(row / 8) * BYTES_PER_ROW; // Simplified mapping
+                if (byteAddr >= buffer.length) continue;
+
+                const rowByte = buffer[byteAddr];
+                for (let col = 0; col < VIDEO_WIDTH; col++) {
+                    const bit = (rowByte >> (7 - (col % 8))) & 1; // MSB first
+                    if (bit) {
+                        const x = col;
+                        const y = row;
+                        this.setPixel(x, y, 255); // White pixel
+                    }
+                }
+            }
+
+            console.log('Video buffer updated from memory 0x8000-0x9FFF');
+        } catch (error) {
+            console.error('Video update error:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Clear video display to black
+     */
+    clear() {
+        try {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
+
+            // Also clear memory buffer
+            for (let addr = VIDEO_BUFFER_START; addr <= VIDEO_BUFFER_END; addr++) {
+                memory.writeByte(addr, 0);
+            }
+
+            console.log('Video cleared to black');
+        } catch (error) {
+            console.error('Video clear error:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Alias for update() - callable from CPU
+     */
+    videoUpdate() {
+        return this.update();
+    }
+
+    /**
+     * Get canvas element for external access
+     */
+    getCanvas() {
+        return videoCanvas;
+    }
+}
+
+// Export for backward compatibility
+export function initVideoManager() {
+    const controlsDiv = document.getElementById('video-controls');
+
+    if (controlsDiv) {
+        // Create enhanced controls with file info, progress, and capacity display
+        controlsDiv.innerHTML = `
+            <div class="control-group">
+                <h3>File Selection</h3>
+                <input type="file" id="video-file" accept="video/*,.asm" multiple>
+                <div id="file-info" class="file-info"></div>
+                <div id="capacity-display" class="capacity-display"></div>
+            </div>
+
+            <div class="control-group">
+                <h3>Operations</h3>
+                <button id="encode-btn">Encode Data</button>
+                <button id="decode-btn">Decode Data</button>
+                <button id="upload-btn">Upload to YouTube</button>
+                <button id="download-btn">Download from YouTube</button>
+                <button id="load-asm-btn">Load .asm → Memory</button>
+                <button id="encode-asm-btn">Encode .asm → Video</button>
+                <button id="encode-asm-multi-btn">Encode .asm → Multi‑Frame</button>
+                <button id="test-roundtrip-btn">Test Round-trip</button>
+            </div>
+
+            <div id="progress-container"></div>
+            <div id="status" class="status-display"></div>
+        `;
+
+        // Wire up event listeners for steganography features
+        document.getElementById('encode-btn').addEventListener('click', handleEncode);
+        document.getElementById('decode-btn').addEventListener('click', handleDecode);
+        document.getElementById('upload-btn').addEventListener('click', handleUpload);
+        document.getElementById('download-btn').addEventListener('click', handleDownload);
+        document.getElementById('video-file').addEventListener('change', handleFileSelect);
+        document.getElementById('load-asm-btn').addEventListener('click', handleLoadAsm);
+        document.getElementById('encode-asm-btn').addEventListener('click', handleEncodeAsm);
+        document.getElementById('encode-asm-multi-btn').addEventListener('click', handleEncodeAsmMultiFrame);
+        document.getElementById('test-roundtrip-btn').addEventListener('click', handleTestRoundtrip);
+    }
+
+    // Initialize emulator video manager
+    if (typeof window !== 'undefined') {
+        // Assume CPU is available globally or import
+        let cpuMemory = null;
+        if (window.cpu && window.cpu.memory) {
+            cpuMemory = window.cpu.memory;
+        }
+        window.videoManager = new VideoManager('emulator-video-canvas', cpuMemory);
+        console.log('✅ VideoManager initialized for emulator display');
+    }
+}

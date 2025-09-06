@@ -14,9 +14,10 @@ import Ajv from 'ajv';
 import * as fs from 'fs';
 import * as path from 'path';
 import PromptQueue from '../agent/queue-manager.js';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { createDeveloperAdapters } from './mcp_developer_adapter.js';
 import MultiModelMCPServer from './multi_model_mcp_server.js';
+import WebSocket from 'ws';
 // Winston structured logging setup
 // Define __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -68,10 +69,11 @@ if (!fs.existsSync(logsDir)) {
 }
 import { MCPError, MCP_ERROR_CODES, formatError } from './mcp_errors.js';
 import ErrorHandler from '../lib/ErrorHandler.js';
+import { sanitizeProgramName, sanitizeProgramSource, validateMemoryAddress, validateMemorySize, validatePixelCoordinates, validateColor, sanitizeTerminalText, validateTimeout, validateBoolean, validateStringLength, VALIDATION_CONFIG } from '../lib/validators.js';
 
 // Create Express app
 const app = express();
-const PORT = process.env.PORT || 8001;
+const PORT = process.env.PORT || 3000;
 
 // Server instance for graceful shutdown
 let server = null;
@@ -145,11 +147,25 @@ function authenticateAPIKey(req, res, next) {
   next();
 }
 
-// Initialize AJV validator - disable remote schema resolution
+// Initialize AJV validator with remote schema resolution enabled
 const ajv = new Ajv({
   allErrors: true,
   removeAdditional: 'all',
-  addUsedSchema: false // Don't fetch remote schemas
+  addUsedSchema: true, // Allow fetching remote schemas
+  strict: false, // Disable strict mode to avoid type warnings
+  formats: {
+    date: true,
+    'date-time': true
+  }
+});
+
+// Add custom date-time format validator if needed
+ajv.addFormat('date-time', {
+  type: 'string',
+  validate: (str) => {
+    const date = new Date(str);
+    return !isNaN(date.getTime()) && date.toISOString() === str;
+  }
 });
 
 // Load and compile JSON schemas
@@ -174,6 +190,12 @@ function loadSchemas() {
 
       const key = file.replace('.json', '');
       try {
+        // Remove $schema reference to avoid remote resolution issues
+        if (schema.$schema) {
+          delete schema.$schema;
+          logger.debug('Removed $schema reference from schema', { schema: key });
+        }
+        
         compiledValidators[key] = ajv.compile(schema);
         logger.debug('Schema loaded successfully', { schema: key });
       } catch (compileError) {
@@ -182,6 +204,234 @@ function loadSchemas() {
           error: compileError.message,
           stack: compileError.stack
         });
+      }
+
+      // Add memory.write endpoint broadcasting if schema exists
+      if (key === 'memory.write.request') {
+        app.post('/mcp/memory/write', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+          const validation = validate('memory.write.request', req.body);
+          if (!validation.success) {
+            throw MCPError.fromAJVValidation(validation.errors);
+          }
+
+          try {
+            const { address, value, size } = req.body;
+            const validatedAddress = validateMemoryAddress(address);
+            const validatedValue = validateColor(value);
+            const validatedSize = validateMemorySize(size || 1);
+
+            logger.info('Memory write request processed', {
+              endpoint: 'POST /mcp/memory/write',
+              address: `0x${validatedAddress.toString(16)}`,
+              value: `0x${validatedValue.toString(16)}`,
+              size: validatedSize
+            });
+
+            adapters.memory.write(validatedAddress, validatedValue, validatedSize);
+
+            // Broadcast memory write event
+            if (typeof broadcastEvent === 'function') {
+              broadcastEvent('memory.write', { address: validatedAddress, value: validatedValue, size: validatedSize });
+            }
+
+            const result = { address: validatedAddress, value: validatedValue, size: validatedSize };
+            res.json(successResponse(result));
+          } catch (error) {
+            const stdError = ErrorHandler.standardizeError(error, 'mcp_server::memory_write');
+            if (error instanceof MCPError) {
+              throw error;
+            }
+            throw new MCPError('INTERNAL_ERROR', 'Memory write failed', stdError.message, 500);
+          }
+        }));
+        logger.info('Memory write endpoint with broadcasting added');
+      }
+
+      // Add memory.saveState endpoint if schema exists
+      if (key === 'memory.saveState.request') {
+        app.post('/mcp/memory/saveState', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+          const validation = validate('memory.saveState.request', req.body);
+          if (!validation.success) {
+            throw MCPError.fromAJVValidation(validation.errors);
+          }
+
+          try {
+            const { name, range, overwrite } = req.body;
+            
+            // Sanitize state name (similar to program name)
+            const sanitizedName = sanitizeProgramName(name);
+            if (sanitizedName.length === 0) {
+              throw new MCPError('INVALID_REQUEST', 'State name must be a non-empty string with valid characters');
+            }
+
+            // Determine range (default full memory)
+            const startAddr = range?.start || 0x0000;
+            const endAddr = range?.end || 0xFFFF;
+            const validatedStart = validateMemoryAddress(startAddr);
+            const validatedEnd = validateMemoryAddress(endAddr);
+            if (validatedEnd < validatedStart) {
+              throw new MCPError('INVALID_REQUEST', 'End address must be >= start address');
+            }
+
+            const bytesToSave = validatedEnd - validatedStart + 1;
+            if (bytesToSave > 65536) {
+              throw new MCPError('PAYLOAD_TOO_LARGE', 'Memory range too large');
+            }
+
+            // Create states directory if needed
+            const statesDir = path.join(dataDir, 'ram_states');
+            if (!fs.existsSync(statesDir)) {
+              fs.mkdirSync(statesDir, { recursive: true });
+            }
+
+            // Check if state exists and handle overwrite
+            const stateFile = path.join(statesDir, `${sanitizedName}.json`);
+            if (fs.existsSync(stateFile) && !overwrite) {
+              throw new MCPError('STATE_EXISTS', `State '${sanitizedName}' already exists`, null, 409);
+            }
+
+            // Read memory contents
+            const memoryBuffer = new Uint8Array(bytesToSave);
+            for (let i = 0; i < bytesToSave; i++) {
+              const addr = (validatedStart + i) & 0xFFFF;
+              memoryBuffer[i] = adapters.memory.read(addr, 1).data.value & 0xFF;
+            }
+
+            // Save to file
+            const stateData = {
+              name: sanitizedName,
+              range: { start: validatedStart, end: validatedEnd },
+              bytes: Array.from(memoryBuffer),
+              savedAt: new Date().toISOString(),
+              version: '1.0'
+            };
+
+            fs.writeFileSync(stateFile, JSON.stringify(stateData, null, 2));
+
+            logger.info('Memory state saved successfully', {
+              endpoint: 'POST /mcp/memory/saveState',
+              stateName: sanitizedName,
+              bytesSaved: bytesToSave,
+              range: `0x${validatedStart.toString(16)}-0x${validatedEnd.toString(16)}`
+            });
+
+            // Broadcast save event
+            if (typeof broadcastEvent === 'function') {
+              broadcastEvent('memory.saveState', { name: sanitizedName, bytesSaved: bytesToSave, range: { start: validatedStart, end: validatedEnd } });
+            }
+
+            const result = {
+              name: sanitizedName,
+              bytesSaved: bytesToSave,
+              range: { start: validatedStart, end: validatedEnd },
+              savedAt: stateData.savedAt
+            };
+
+            res.json(successResponse(result));
+          } catch (error) {
+            const stdError = ErrorHandler.standardizeError(error, 'mcp_server::memory_saveState');
+            if (error instanceof MCPError) {
+              throw error;
+            }
+            throw new MCPError('INTERNAL_ERROR', 'Memory save state failed', stdError.message, 500);
+          }
+        }));
+        logger.info('Memory saveState endpoint added');
+      }
+
+      // Add memory.loadState endpoint if schema exists
+      if (key === 'memory.loadState.request') {
+        app.post('/mcp/memory/loadState', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+          const validation = validate('memory.loadState.request', req.body);
+          if (!validation.success) {
+            throw MCPError.fromAJVValidation(validation.errors);
+          }
+
+          try {
+            const { name, targetAddress, range } = req.body;
+            
+            // Sanitize state name
+            const sanitizedName = sanitizeProgramName(name);
+            if (sanitizedName.length === 0) {
+              throw new MCPError('INVALID_REQUEST', 'State name must be a non-empty string with valid characters');
+            }
+
+            // Validate target address
+            const validatedTarget = validateMemoryAddress(targetAddress || 0x0000);
+
+            // Load state file
+            const statesDir = path.join(dataDir, 'ram_states');
+            const stateFile = path.join(statesDir, `${sanitizedName}.json`);
+            
+            if (!fs.existsSync(stateFile)) {
+              throw new MCPError('STATE_NOT_FOUND', `State '${sanitizedName}' not found`, null, 404);
+            }
+
+            const stateData = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+            if (!stateData.bytes || !Array.isArray(stateData.bytes)) {
+              throw new MCPError('INVALID_STATE_FILE', 'State file contains invalid data', null, 422);
+            }
+
+            // Determine load range (use saved range if not specified)
+            const loadStart = range?.start !== undefined ? validateMemoryAddress(range.start) : stateData.range.start;
+            const loadEnd = range?.end !== undefined ? validateMemoryAddress(range.end) : stateData.range.end;
+            const bytesToLoad = loadEnd - loadStart + 1;
+
+            if (bytesToLoad > stateData.bytes.length) {
+              throw new MCPError('INVALID_RANGE', 'Specified range exceeds saved state size', null, 422);
+            }
+
+            // Check target range doesn't exceed memory bounds
+            const finalEnd = validatedTarget + bytesToLoad - 1;
+            if (finalEnd > 0xFFFF) {
+              throw new MCPError('MEMORY_OUT_OF_BOUNDS', `Load would exceed memory bounds at target 0x${validatedTarget.toString(16)}`, null, 422);
+            }
+
+            // Load bytes to memory
+            let bytesLoaded = 0;
+            for (let i = 0; i < bytesToLoad; i++) {
+              const sourceByte = stateData.bytes[loadStart + i];
+              const targetAddr = (validatedTarget + i) & 0xFFFF;
+              try {
+                adapters.memory.write(targetAddr, sourceByte, 1);
+                bytesLoaded++;
+              } catch (writeError) {
+                logger.warn('Failed to load state byte', { targetAddr, sourceByte, error: writeError.message });
+                break; // Stop on write error
+              }
+            }
+
+            logger.info('Memory state loaded successfully', {
+              endpoint: 'POST /mcp/memory/loadState',
+              stateName: sanitizedName,
+              bytesLoaded,
+              targetAddress: `0x${validatedTarget.toString(16)}`,
+              range: `0x${loadStart.toString(16)}-0x${loadEnd.toString(16)}`
+            });
+
+            // Broadcast load event
+            if (typeof broadcastEvent === 'function') {
+              broadcastEvent('memory.loadState', { name: sanitizedName, bytesLoaded, targetAddress: validatedTarget, range: { start: loadStart, end: loadEnd } });
+            }
+
+            const result = {
+              name: sanitizedName,
+              bytesLoaded,
+              targetAddress: validatedTarget,
+              range: { start: loadStart, end: loadEnd },
+              loadedAt: new Date().toISOString()
+            };
+
+            res.json(successResponse(result));
+          } catch (error) {
+            const stdError = ErrorHandler.standardizeError(error, 'mcp_server::memory_loadState');
+            if (error instanceof MCPError) {
+              throw error;
+            }
+            throw new MCPError('INTERNAL_ERROR', 'Memory load state failed', stdError.message, 500);
+          }
+        }));
+        logger.info('Memory loadState endpoint added');
       }
     }
 
@@ -284,206 +534,6 @@ function successResponse(data) {
   };
 }
 
-// ============================================================================
-// INPUT VALIDATION AND SANITIZATION UTILITIES
-// ============================================================================
-
-const VALIDATION_CONFIG = {
-  MAX_PROGRAM_NAME_LENGTH: 50,
-  MAX_PROGRAM_SOURCE_LENGTH: 10000, // 10KB limit for program source
-  MAX_FILE_PATH_LENGTH: 255,
-  MAX_MEMORY_SIZE: 65536, // 64KB address space
-  MAX_PIXEL_COORDINATE: 31,
-  MAX_COLOR_VALUE: 255,
-  MAX_TERMINAL_TEXT_LENGTH: 1000,
-  MAX_TIMEOUT_MS: 30000,
-  MIN_TIMEOUT_MS: 100
-};
-
-/**
- * Sanitize and validate program name
- * @param {string} name - Program name to validate
- * @returns {string} Sanitized program name
- * @throws {MCPError} If name is invalid
- */
-function sanitizeProgramName(name) {
-  if (!name || typeof name !== 'string') {
-    throw new MCPError('INVALID_REQUEST', 'Program name must be a non-empty string');
-  }
-
-  const sanitized = name.trim().replace(/[^a-zA-Z0-9\-_\.]/g, '').substring(0, VALIDATION_CONFIG.MAX_PROGRAM_NAME_LENGTH);
-
-  if (sanitized.length === 0) {
-    throw new MCPError('INVALID_REQUEST', 'Program name contains no valid characters');
-  }
-
-  // Prevent directory traversal
-  if (sanitized.includes('..') || sanitized.includes('/') || sanitized.includes('\\')) {
-    throw new MCPError('INVALID_REQUEST', 'Program name contains invalid path characters');
-  }
-
-  return sanitized;
-}
-
-/**
- * Sanitize and validate program source code
- * @param {string} source - Program source code to validate
- * @returns {string} Sanitized source code
- * @throws {MCPError} If source is invalid
- */
-function sanitizeProgramSource(source) {
-  if (!source || typeof source !== 'string') {
-    throw new MCPError('INVALID_REQUEST', 'Program source must be a non-empty string');
-  }
-
-  if (source.length > VALIDATION_CONFIG.MAX_PROGRAM_SOURCE_LENGTH) {
-    throw new MCPError('PAYLOAD_TOO_LARGE', `Program source too large. Maximum size is ${VALIDATION_CONFIG.MAX_PROGRAM_SOURCE_LENGTH} characters`);
-  }
-
-  // Basic sanitization - remove any potentially harmful patterns in assembly
-  const sanitized = source.replace(/[\x00-\x1F\x7F-\x9F]/g, ''); // Remove control characters
-
-  return sanitized;
-}
-
-/**
- * Validate memory address
- * @param {number} address - Memory address to validate
- * @returns {number} Validated address
- * @throws {MCPError} If address is invalid
- */
-function validateMemoryAddress(address) {
-  if (typeof address !== 'number' || isNaN(address)) {
-    throw new MCPError('INVALID_REQUEST', 'Address must be a valid number');
-  }
-
-  if (address < 0 || address > 0xFFFF) {
-    throw new MCPError('MEMORY_OUT_OF_BOUNDS', 'Address must be between 0x0000 and 0xFFFF');
-  }
-
-  return parseInt(address, 10);
-}
-
-/**
- * Validate memory size
- * @param {number} size - Memory size to validate
- * @returns {number} Validated size
- * @throws {MCPError} If size is invalid
- */
-function validateMemorySize(size) {
-  if (typeof size !== 'number' || isNaN(size)) {
-    throw new MCPError('INVALID_REQUEST', 'Size must be a valid number');
-  }
-
-  if (size < 1 || size > 65536) {
-    throw new MCPError('INVALID_REQUEST', 'Size must be between 1 and 65536 bytes');
-  }
-
-  return parseInt(size, 10);
-}
-
-/**
- * Validate pixel coordinates
- * @param {number} x - X coordinate
- * @param {number} y - Y coordinate
- * @throws {MCPError} If coordinates are invalid
- */
-function validatePixelCoordinates(x, y) {
-  if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) {
-    throw new MCPError('INVALID_REQUEST', 'Coordinates must be valid numbers');
-  }
-
-  if (x < 0 || x > VALIDATION_CONFIG.MAX_PIXEL_COORDINATE ||
-      y < 0 || y > VALIDATION_CONFIG.MAX_PIXEL_COORDINATE) {
-    throw new MCPError('VIDEO_OUT_OF_BOUNDS', `Coordinates must be between 0 and ${VALIDATION_CONFIG.MAX_PIXEL_COORDINATE}`);
-  }
-}
-
-/**
- * Validate color value
- * @param {number} color - Color value to validate
- * @returns {number} Validated color
- * @throws {MCPError} If color is invalid
- */
-function validateColor(color) {
-  if (typeof color !== 'number' || isNaN(color)) {
-    throw new MCPError('INVALID_REQUEST', 'Color must be a valid number');
-  }
-
-  if (color < 0 || color > VALIDATION_CONFIG.MAX_COLOR_VALUE) {
-    throw new MCPError('INVALID_REQUEST', `Color must be between 0 and ${VALIDATION_CONFIG.MAX_COLOR_VALUE}`);
-  }
-
-  return parseInt(color, 10);
-}
-
-/**
- * Validate and sanitize terminal text
- * @param {string} text - Terminal text to validate
- * @returns {string} Sanitized text
- * @throws {MCPError} If text is invalid
- */
-function sanitizeTerminalText(text) {
-  if (typeof text !== 'string') {
-    throw new MCPError('INVALID_REQUEST', 'Terminal text must be a string');
-  }
-
-  if (text.length > VALIDATION_CONFIG.MAX_TERMINAL_TEXT_LENGTH) {
-    throw new MCPError('PAYLOAD_TOO_LARGE', `Terminal text too long. Maximum length is ${VALIDATION_CONFIG.MAX_TERMINAL_TEXT_LENGTH} characters`);
-  }
-
-  // Sanitize control characters but preserve line breaks and tabs
-  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
-}
-
-/**
- * Validate timeout value
- * @param {number} timeout - Timeout value to validate
- * @returns {number} Validated timeout
- * @throws {MCPError} If timeout is invalid
- */
-function validateTimeout(timeout) {
-  if (timeout === undefined) return VALIDATION_CONFIG.MIN_TIMEOUT_MS;
-
-  if (typeof timeout !== 'number' || isNaN(timeout)) {
-    throw new MCPError('INVALID_REQUEST', 'Timeout must be a valid number');
-  }
-
-  if (timeout < VALIDATION_CONFIG.MIN_TIMEOUT_MS || timeout > VALIDATION_CONFIG.MAX_TIMEOUT_MS) {
-    throw new MCPError('INVALID_REQUEST', `Timeout must be between ${VALIDATION_CONFIG.MIN_TIMEOUT_MS} and ${VALIDATION_CONFIG.MAX_TIMEOUT_MS} milliseconds`);
-  }
-
-  return parseInt(timeout, 10);
-}
-
-/**
- * Validate boolean values
- * @param {*} value - Value to validate
- * @param {string} fieldName - Name of the field for error messages
- * @throws {MCPError} If value is not a valid boolean
- */
-function validateBoolean(value, fieldName = 'boolean') {
-  if (typeof value !== 'boolean') {
-    throw new MCPError('INVALID_REQUEST', `${fieldName} must be a boolean value`);
-  }
-}
-
-/**
- * Validate string length
- * @param {string} str - String to validate
- * @param {number} maxLength - Maximum allowed length
- * @param {string} fieldName - Name of the field for error messages
- * @throws {MCPError} If string is invalid
- */
-function validateStringLength(str, maxLength, fieldName = 'string') {
-  if (typeof str !== 'string') {
-    throw new MCPError('INVALID_REQUEST', `${fieldName} must be a string`);
-  }
-
-  if (str.length > maxLength) {
-    throw new MCPError('PAYLOAD_TOO_LARGE', `${fieldName} too long. Maximum length is ${maxLength} characters`);
-  }
-}
 
 // Async route wrapper for error handling
 function asyncHandler(fn) {
@@ -508,6 +558,115 @@ app.post('/mcp/cpu/reset', moderateLimiter, asyncHandler(async (req, res) => {
   }
 }));
 
+// Memory read endpoint
+app.post('/mcp/memory/read', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+  const validation = validate('memory.read.request', req.body);
+  if (!validation.success) {
+    throw MCPError.fromAJVValidation(validation.errors);
+  }
+
+  try {
+    const { address, size } = req.body;
+    const validatedAddress = validateMemoryAddress(address);
+    const validatedSize = validateMemorySize(size || 1);
+
+    // Check bounds
+    if (validatedAddress + validatedSize - 1 > 0xFFFF) {
+      throw new MCPError('MEMORY_OUT_OF_BOUNDS', `Read would exceed memory bounds at 0x${validatedAddress.toString(16)}`, null, 422);
+    }
+
+    logger.info('Memory read request processed', {
+      endpoint: 'POST /mcp/memory/read',
+      address: `0x${validatedAddress.toString(16)}`,
+      size: validatedSize
+    });
+
+    const bytes = [];
+    for (let i = 0; i < validatedSize; i++) {
+      const addr = (validatedAddress + i) & 0xFFFF;
+      const readResult = adapters.memory.read(addr, 1);
+      bytes.push(readResult.data.value & 0xFF);
+    }
+
+    const result = {
+      address: validatedAddress,
+      size: validatedSize,
+      bytes: bytes,
+      endAddress: validatedAddress + validatedSize - 1
+    };
+
+    // Validate response
+    const responseValidation = validate('memory.read.response', result);
+    if (!responseValidation.success) {
+      logger.warn('Memory read response validation failed', { errors: responseValidation.errors });
+    }
+
+    // Broadcast memory read event (optional for logging)
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('memory.read', { address: validatedAddress, size: validatedSize });
+    }
+
+    res.json(successResponse(result));
+  } catch (error) {
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::memory_read');
+    if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'Memory read failed', stdError.message, 500);
+  }
+}));
+
+// Memory loadProgram endpoint
+app.post('/mcp/memory/loadProgram', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+  const validation = validate('memory.loadProgram.request', req.body);
+  if (!validation.success) {
+    throw MCPError.fromAJVValidation(validation.errors);
+  }
+
+  try {
+    const { programName, startAddress, assembled } = req.body;
+    const sanitizedName = sanitizeProgramName(programName);
+    const validatedAddress = validateMemoryAddress(startAddress || 0x0600);
+    validateBoolean(assembled, 'assembled');
+
+    logger.info('Memory loadProgram request processed', {
+      endpoint: 'POST /mcp/memory/loadProgram',
+      programName: sanitizedName,
+      startAddress: `0x${validatedAddress.toString(16)}`,
+      assembled
+    });
+
+    const result = await adapters.programs.loadProgramFromSource(sanitizedName, validatedAddress, assembled);
+
+    // Validate response
+    const responseValidation = validate('memory.loadProgram.response', result);
+    if (!responseValidation.success) {
+      logger.warn('Memory loadProgram response validation failed', { errors: responseValidation.errors });
+    }
+
+    // Broadcast load event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('memory.loadProgram', {
+        programName: sanitizedName,
+        bytesLoaded: result.bytesLoaded || 0,
+        startAddress: validatedAddress
+      });
+    }
+
+    res.json(successResponse(result));
+  } catch (error) {
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::memory_loadProgram');
+    if (error.message.includes('PROGRAM_NOT_FOUND')) {
+      throw new MCPError('PROGRAM_NOT_FOUND', 'Program not found', null, 404);
+    } else if (error.message.includes('INVALID_ASSEMBLY')) {
+      throw new MCPError('INVALID_ASSEMBLY', 'Invalid assembly code', null, 422);
+    } else if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'Memory loadProgram failed', stdError.message, 500);
+  }
+}));
+
 app.post('/mcp/cpu/step', authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
   const validation = validate('cpu.step.request', req.body);
   if (!validation.success) {
@@ -517,6 +676,11 @@ app.post('/mcp/cpu/step', authenticateAPIKey, intenseLimiter, asyncHandler(async
   try {
     const validatedTimeout = validateTimeout(req.body.timeout);
     const result = adapters.cpu.step(validatedTimeout);
+
+    // Broadcast CPU step event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('cpu.step', { pc: result.pc, instruction: result.instruction, registers: result.registers });
+    }
 
     logger.info('CPU step executed successfully', {
       endpoint: 'POST /mcp/cpu/step',
@@ -585,41 +749,244 @@ app.post('/mcp/programs/load-sample', moderateLimiter, asyncHandler(async (req, 
   }
 }));
 
-// POST /mcp/programs/load - Load program from samples/ by name
-app.post('/mcp/programs/load', moderateLimiter, asyncHandler(async (req, res) => {
-  const validation = validate('programs.load.request.new', req.body);
-  if (!validation.success) {
-    throw MCPError.fromAJVValidation(validation.errors);
-  }
+    // POST /mcp/programs/load - Load program from samples/ by name
+    app.post('/mcp/programs/load', moderateLimiter, asyncHandler(async (req, res) => {
+      const validation = validate('programs.load.request.new', req.body);
+      if (!validation.success) {
+        throw MCPError.fromAJVValidation(validation.errors);
+      }
+    
+      try {
+        const { name, startAddress } = req.body;
+    
+        // Additional validation and sanitization
+        const sanitizedName = sanitizeProgramName(name);
+        const validatedAddress = validateMemoryAddress(startAddress || 0x0600);
+    
+        logger.info('Program load request initiated', {
+          endpoint: 'POST /mcp/programs/load',
+          programName: sanitizedName,
+          startAddress: `0x${validatedAddress?.toString(16)}`
+        });
+    
+        const result = await adapters.programs.loadProgramFromSource(sanitizedName, validatedAddress);
+        res.json(successResponse(result));
+      } catch (error) {
+        const stdError = ErrorHandler.standardizeError(error, 'mcp_server::programs_load');
+        if (error.message.includes('PROGRAM_NOT_FOUND')) {
+          throw new MCPError('PROGRAM_NOT_FOUND', 'Program not found', null, 422);
+        } else if (error.message.includes('INVALID_ASSEMBLY')) {
+          throw new MCPError('INVALID_ASSEMBLY', 'Invalid assembly code', null, 422);
+        } else if (error.message.includes('MEMORY_OUT_OF_RANGE')) {
+          throw new MCPError('MEMORY_OUT_OF_RANGE', 'Memory address out of range', null, 422);
+        } else {
+          throw new MCPError('INTERNAL_ERROR', 'Program load failed', stdError.message, 500);
+        }
+      }
+    }));
 
-  try {
-    const { name, startAddress } = req.body;
+    // POST /mcp/assemble/source - Assemble source code and return bytes
+    app.post('/mcp/assemble/source', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+      const validation = validate('assemble.source.request', req.body);
+      if (!validation.success) {
+        throw MCPError.fromAJVValidation(validation.errors);
+      }
 
-    // Additional validation and sanitization
-    const sanitizedName = sanitizeProgramName(name);
-    const validatedAddress = validateMemoryAddress(startAddress || 0x0600);
+      try {
+        const { source, origin } = req.body;
+        
+        // Sanitize and validate input
+        const sanitizedSource = sanitizeProgramSource(source);
+        const validatedOrigin = validateMemoryAddress(origin || 0x0600);
+        
+        // Check if origin + estimated program size would overflow
+        if (sanitizedSource.length > VALIDATION_CONFIG.MAX_PROGRAM_SOURCE_LENGTH) {
+          throw new MCPError('PAYLOAD_TOO_LARGE', 'Assembly source too large', null, 413);
+        }
 
-    logger.info('Program load request initiated', {
-      endpoint: 'POST /mcp/programs/load',
-      programName: sanitizedName,
-      startAddress: `0x${validatedAddress?.toString(16)}`
-    });
+        logger.info('Assembly source request processed', {
+          endpoint: 'POST /mcp/assemble/source',
+          sourceLength: sanitizedSource.length,
+          origin: `0x${validatedOrigin.toString(16)}`
+        });
 
-    const result = await adapters.programs.loadProgramFromSource(sanitizedName, validatedAddress);
-    res.json(successResponse(result));
-  } catch (error) {
-    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::programs_load');
-    if (error.message.includes('PROGRAM_NOT_FOUND')) {
-      throw new MCPError('PROGRAM_NOT_FOUND', 'Program not found', null, 422);
-    } else if (error.message.includes('INVALID_ASSEMBLY')) {
-      throw new MCPError('INVALID_ASSEMBLY', 'Invalid assembly code', null, 422);
-    } else if (error.message.includes('MEMORY_OUT_OF_RANGE')) {
-      throw new MCPError('MEMORY_OUT_OF_RANGE', 'Memory address out of range', null, 422);
-    } else {
-      throw new MCPError('INTERNAL_ERROR', 'Program load failed', stdError.message, 500);
-    }
-  }
-}));
+        // Import assembler dynamically
+        const { assemble } = await import('../js/assembler.js');
+        
+        // Assemble the source
+        const assembledBytes = assemble(sanitizedSource, { origin: validatedOrigin });
+        
+        if (!assembledBytes || assembledBytes.length === 0) {
+          throw new MCPError('ASSEMBLY_FAILED', 'Assembly produced no output', null, 422);
+        }
+
+        // Check for memory overflow
+        if (validatedOrigin + assembledBytes.length > 0xFFFF) {
+          throw new MCPError('MEMORY_OUT_OF_RANGE', `Program would overflow memory at origin 0x${validatedOrigin.toString(16)}`, null, 422);
+        }
+
+        // Broadcast assembly event
+        if (typeof broadcastEvent === 'function') {
+          broadcastEvent('assemble.source', {
+            origin: validatedOrigin,
+            bytes: assembledBytes.length,
+            sourceLength: sanitizedSource.length
+          });
+        }
+
+        const result = {
+          origin: validatedOrigin,
+          bytes: Array.from(assembledBytes),
+          byteCount: assembledBytes.length,
+          sourceLength: sanitizedSource.length
+        };
+
+        // Validate response
+        const responseValidation = validate('assemble.source.response', result);
+        if (!responseValidation.success) {
+          logger.warn('Assembly response validation failed', { errors: responseValidation.errors });
+        }
+
+        res.json(successResponse(result));
+        
+      } catch (error) {
+        const stdError = ErrorHandler.standardizeError(error, 'mcp_server::assemble_source');
+        if (error.message.includes('ASSEMBLY_FAILED')) {
+          throw new MCPError('ASSEMBLY_FAILED', 'Assembly compilation failed', stdError.message, 422);
+        } else if (error.message.includes('MEMORY_OUT_OF_RANGE')) {
+          throw new MCPError('MEMORY_OUT_OF_RANGE', 'Program would exceed memory bounds', stdError.message, 422);
+        } else if (error instanceof MCPError) {
+          throw error;
+        } else {
+          throw new MCPError('INTERNAL_ERROR', 'Assembly processing failed', stdError.message, 500);
+        }
+      }
+    }));
+
+    // POST /mcp/assemble/loadAndRun - Assemble, load, and optionally run program
+    app.post('/mcp/assemble/loadAndRun', authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
+      const validation = validate('assemble.loadAndRun.request', req.body);
+      if (!validation.success) {
+        throw MCPError.fromAJVValidation(validation.errors);
+      }
+
+      try {
+        const { source, origin, run = false, maxSteps = 1000 } = req.body;
+        
+        // Sanitize and validate input
+        const sanitizedSource = sanitizeProgramSource(source);
+        const validatedOrigin = validateMemoryAddress(origin || 0x0600);
+        validateBoolean(run, 'run');
+        const validatedMaxSteps = Math.min(Math.max(parseInt(maxSteps) || 1000, 1), 10000); // Cap at 10k steps
+        
+        if (sanitizedSource.length > VALIDATION_CONFIG.MAX_PROGRAM_SOURCE_LENGTH) {
+          throw new MCPError('PAYLOAD_TOO_LARGE', 'Assembly source too large', null, 413);
+        }
+
+        logger.info('Assembly loadAndRun request processed', {
+          endpoint: 'POST /mcp/assemble/loadAndRun',
+          sourceLength: sanitizedSource.length,
+          origin: `0x${validatedOrigin.toString(16)}`,
+          run,
+          maxSteps: validatedMaxSteps
+        });
+
+        // Import assembler
+        const { assemble } = await import('../js/assembler.js');
+        
+        // Assemble the source
+        const assembledBytes = assemble(sanitizedSource, { origin: validatedOrigin });
+        
+        if (!assembledBytes || assembledBytes.length === 0) {
+          throw new MCPError('ASSEMBLY_FAILED', 'Assembly produced no output', null, 422);
+        }
+
+        // Check memory bounds
+        if (validatedOrigin + assembledBytes.length > 0xFFFF) {
+          throw new MCPError('MEMORY_OUT_OF_RANGE', `Program would overflow memory at origin 0x${validatedOrigin.toString(16)}`, null, 422);
+        }
+
+        // Load to memory via adapter
+        for (let i = 0; i < assembledBytes.length; i++) {
+          const address = validatedOrigin + i;
+          adapters.memory.write(address, assembledBytes[i], 1);
+        }
+
+        // Reset CPU
+        adapters.cpu.reset(true);
+        
+        let executionResult = null;
+        if (run) {
+          // Run for maxSteps or until HLT
+          let stepsExecuted = 0;
+          const startPC = validatedOrigin;
+          
+          while (stepsExecuted < validatedMaxSteps) {
+            const instruction = adapters.cpu.step(1);
+            stepsExecuted++;
+            
+            // Check for HLT instruction (opcode 0x3A)
+            if (instruction.opcode === 0x3A) {
+              logger.debug('Assembly execution stopped at HLT', { stepsExecuted, finalPC: adapters.cpu.PC });
+              break;
+            }
+            
+            // Check for breakpoint if debug system active
+            if (typeof checkBreakpoint === 'function' && checkBreakpoint()) {
+              logger.debug('Assembly execution stopped at breakpoint', { stepsExecuted, pc: adapters.cpu.PC });
+              break;
+            }
+          }
+          
+          executionResult = {
+            stepsExecuted,
+            startPC,
+            finalPC: adapters.cpu.PC,
+            halted: stepsExecuted < validatedMaxSteps
+          };
+        }
+
+        // Broadcast events
+        if (typeof broadcastEvent === 'function') {
+          broadcastEvent('assemble.loadAndRun', {
+            origin: validatedOrigin,
+            bytesLoaded: assembledBytes.length,
+            run,
+            stepsExecuted: executionResult ? executionResult.stepsExecuted : 0,
+            sourceLength: sanitizedSource.length
+          });
+        }
+
+        const result = {
+          origin: validatedOrigin,
+          bytesLoaded: assembledBytes.length,
+          sourceLength: sanitizedSource.length,
+          execution: run ? executionResult : null,
+          run,
+          maxSteps: validatedMaxSteps
+        };
+
+        // Validate response
+        const responseValidation = validate('assemble.loadAndRun.response', result);
+        if (!responseValidation.success) {
+          logger.warn('Assembly loadAndRun response validation failed', { errors: responseValidation.errors });
+        }
+
+        res.json(successResponse(result));
+        
+      } catch (error) {
+        const stdError = ErrorHandler.standardizeError(error, 'mcp_server::assemble_loadAndRun');
+        if (error.message.includes('ASSEMBLY_FAILED')) {
+          throw new MCPError('ASSEMBLY_FAILED', 'Assembly compilation failed', stdError.message, 422);
+        } else if (error.message.includes('MEMORY_OUT_OF_RANGE')) {
+          throw new MCPError('MEMORY_OUT_OF_RANGE', 'Program would exceed memory bounds', stdError.message, 422);
+        } else if (error instanceof MCPError) {
+          throw error;
+        } else {
+          throw new MCPError('INTERNAL_ERROR', 'Assembly load and run failed', stdError.message, 500);
+        }
+      }
+    }));
 
 // POST /mcp/programs/save - Save program to samples/
 app.post('/mcp/programs/save', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
@@ -689,7 +1056,17 @@ app.post('/mcp/video/setPixel', moderateLimiter, asyncHandler(async (req, res) =
 
     adapters.memory.write(address, validatedColor, 1);
 
+    // Broadcast video pixel change event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('video.setPixel', { x, y, color: validatedColor, address });
+    }
+
     const result = { address };
+
+    // Broadcast memory write for video pixel (since it writes to memory)
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('memory.write', { address, value: validatedColor, size: 1 });
+    }
 
     // Validate response against schema
     const responseValidation = validate('video.setPixel.response', result);
@@ -802,6 +1179,11 @@ app.post('/mcp/video/clear', moderateLimiter, asyncHandler(async (req, res) => {
       // Clear memory in chunks to avoid overloading
       for (let addr = 0x0200; addr <= 0x05FF; addr++) {
         adapters.memory.write(addr, validatedColor, 1);
+
+        // Broadcast video clear event (bulk, so just one event)
+        if (addr === 0x0200 && typeof broadcastEvent === 'function') {
+          broadcastEvent('video.clear', { color: validatedColor, range: '0x0200-0x05FF' });
+        }
       }
     }
 
@@ -884,6 +1266,11 @@ app.post('/mcp/debug/memoryView', authenticateAPIKey, intenseLimiter, asyncHandl
         const addr = validatedAddress + i;
         const result = await adapters.memory.read(addr, 1);
         bytes.push(result.data.value);
+
+        // Broadcast memory read event for debug view (optional, for logging)
+        if (i === 0 && typeof broadcastEvent === 'function') {
+          broadcastEvent('debug.memoryView', { address: validatedAddress, size: validatedSize });
+        }
       }
 
       const response = {
@@ -993,42 +1380,79 @@ app.post('/mcp/debug/breakpoints', authenticateAPIKey, intenseLimiter, asyncHand
 // ============================================================================
 
 app.post('/mcp/ai/generate', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
- try {
-   const { prompt, task, options } = req.body;
+  // Validate request against schema
+  const requestValidation = validate('ai.generate.request', req.body);
+  if (!requestValidation.success) {
+    throw MCPError.fromAJVValidation(requestValidation.errors);
+  }
 
-   // Additional validation and sanitization
-   if (!prompt || typeof prompt !== 'string') {
-     throw new MCPError('INVALID_REQUEST', 'Prompt must be a non-empty string');
-   }
+  const { prompt, task, options } = req.body;
+  const sanitizedPrompt = prompt.trim();
+  const taskType = task || 'generation';
 
-   const sanitizedPrompt = prompt.trim();
-   const taskType = task || 'generation';
+  logger.info('AI generation request processed', {
+    endpoint: 'POST /mcp/ai/generate',
+    task: taskType,
+    promptLength: sanitizedPrompt.length,
+    modelOptions: options
+  });
 
-   if (sanitizedPrompt.length === 0 || sanitizedPrompt.length > 10000) {
-     throw new MCPError('INVALID_REQUEST', 'Prompt length must be between 1 and 10000 characters');
-   }
+  try {
+    logger.debug('Selecting best model for AI generation', { task: taskType, promptPreview: sanitizedPrompt.substring(0, 50) + '...' });
+    const aiResult = await multiModelServer.generateWithBestModel(sanitizedPrompt, taskType, options);
+    logger.debug('AI model generation completed', { modelUsed: aiResult.model || 'unknown', success: aiResult.success, tokensUsed: aiResult.tokensUsed || 0 });
+    
+    // Format response according to schema
+    let responseData;
+    if (aiResult.success) {
+      responseData = {
+        content: aiResult.content || aiResult.generatedText || '',
+        model: aiResult.model || 'unknown',
+        tokensUsed: aiResult.tokensUsed || 0,
+        generatedAt: new Date().toISOString()
+      };
+    } else {
+      responseData = {
+        code: aiResult.errorCode || 'AI_GENERATION_FAILED',
+        message: aiResult.error || 'AI generation failed'
+      };
+      logger.warn('AI generation failed from model', { model: aiResult.model, errorCode: responseData.code, errorMessage: responseData.message });
+      throw new MCPError('AI_GENERATION_FAILED', responseData.message, responseData, 422);
+    }
 
-   logger.info('AI generation request initiated', {
-     endpoint: 'POST /mcp/ai/generate',
-     task: taskType,
-     promptLength: sanitizedPrompt.length
-   });
+    // Validate response against schema
+    const responseValidation = validate('ai.generate.response', { success: true, data: responseData });
+    if (!responseValidation.success) {
+      logger.warn('AI generate response validation failed', { errors: responseValidation.errors });
+      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
+    }
 
-   const result = await multiModelServer.generateWithBestModel(sanitizedPrompt, taskType);
+    // Broadcast AI generation event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('ai.generate', {
+        task: taskType,
+        promptLength: sanitizedPrompt.length,
+        model: responseData.model,
+        tokensUsed: responseData.tokensUsed
+      });
+    }
 
-   if (!result.success) {
-     throw new MCPError('AI_GENERATION_FAILED', result.error, result, 422);
-   }
-
-   res.json(successResponse(result));
- } catch (error) {
-   const stdError = ErrorHandler.standardizeError(error, 'mcp_server::ai_generate');
-   if (error instanceof MCPError) {
-     throw error;
-   } else {
-     throw new MCPError('INTERNAL_ERROR', 'AI generation failed', stdError.message, 500);
-   }
- }
+    logger.info('AI generation successful', { model: responseData.model, contentLength: responseData.content.length, tokensUsed: responseData.tokensUsed });
+    res.json(successResponse(responseData));
+    
+  } catch (error) {
+    logger.error('AI generation error', {
+      error: error.message,
+      stack: error.stack,
+      task: taskType,
+      promptLength: sanitizedPrompt.length
+    });
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::ai_generate');
+    if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'AI generation failed', stdError.message, 500);
+  }
 }));
 
 app.post('/mcp/ai/models', authenticateAPIKey, lenientLimiter, asyncHandler(async (req, res) => {
@@ -1184,10 +1608,22 @@ async function startServer() {
     initializeQueue();
     console.log('Queue initialized successfully');
 
-    server = app.listen(PORT, () => {
-      console.log(`iMaCoMpUtERussy MCP Server running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
-      console.log(`API base URL: http://localhost:${PORT}/mcp`);
+    // Bind to localhost explicitly in development to avoid OS-level permission errors
+    // when attempting to listen on 0.0.0.0 on some Windows setups.
+    server = app.listen(PORT, '127.0.0.1', async () => {
+      console.log(`iMaCoMpUtERussy MCP Server running on http://127.0.0.1:${PORT}`);
+      console.log(`Health check: http://127.0.0.1:${PORT}/health`);
+      console.log(`API base URL: http://127.0.0.1:${PORT}/mcp`);
+
+      // WebSocket server initialization temporarily disabled due to ESM import issues
+      // TODO: Fix WebSocket server setup for production
+      console.log('WebSocket server disabled - using direct HTTP endpoints for MCP events');
+      
+      // Define broadcastEvent as a no-op function for now
+      globalThis.broadcastEvent = (eventType, data) => {
+        logger.info('Broadcast event (disabled)', { eventType, data });
+        // In production, this would broadcast via WebSocket
+      };
     });
 
     // Handle server-level errors
@@ -1205,7 +1641,8 @@ async function startServer() {
 // Export app for testing
 export { app };
 
-// Start server when run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Start server when run directly. Use pathToFileURL to correctly compare ESM import.meta.url
+// with the executed script path (works across platforms and handles absolute paths).
+if (process.argv && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startServer();
 }

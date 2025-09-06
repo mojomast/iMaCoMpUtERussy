@@ -5,6 +5,7 @@
 
 import { LZ77Compressor, compressData, decompressData, getCompressionRatio, shouldCompress } from '../js/compression.js';
 import { SteganographyEngine } from '../js/steganography.js';
+import { test, runTests } from './utils/test-runner.js';
 
 // Test helper to create repetitive test data
 function createRepetitiveData(size, pattern = [1, 2, 3, 4]) {
@@ -36,25 +37,6 @@ export function runCompressionTests() {
         failed: 0,
         tests: []
     };
-
-    function test(name, testFn) {
-        try {
-            const result = testFn();
-            if (result === true || result === undefined) {
-                results.passed++;
-                results.tests.push({ name, status: 'PASS' });
-                console.log(`✓ ${name}`);
-            } else {
-                results.failed++;
-                results.tests.push({ name, status: 'FAIL', error: result });
-                console.log(`✗ ${name}: ${result}`);
-            }
-        } catch (error) {
-            results.failed++;
-            results.tests.push({ name, status: 'FAIL', error: error.message });
-            console.log(`✗ ${name}: ${error.message}`);
-        }
-    }
 
     // Test 1: Basic LZ77 compression/decompression
     test('Basic LZ77 compression/decompression', () => {

@@ -33,12 +33,16 @@ const __dirname = path.dirname(__filename);
 
 class PromptQueue {
   constructor(options = {}) {
+    // Add unique instance ID for logging
+    this.instanceId = `queue_instance_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    queueLogger.info('PromptQueue instance created', { instanceId: this.instanceId, queueFile: options.queueFile });
+  
     this.queueFile = options.queueFile || path.join(__dirname, '..', 'data', 'queue.json');
     this.backupDir = options.backupDir || path.join(__dirname, '..', 'data', 'backups');
     this.maxBackups = options.maxBackups || 10;
     this.autoSave = options.autoSave !== false;
     this.aiProcessor = options.aiProcessor || null;
-
+  
     this.queue = [];
     this.loadQueue();
     this.ensureDirectories();
@@ -407,14 +411,18 @@ class PromptQueue {
    */
   async loadQueue() {
     try {
+      queueLogger.info('Loading queue from file', { instanceId: this.instanceId, queueFile: this.queueFile, fileSize: fs.existsSync(this.queueFile) ? fs.statSync(this.queueFile).size : 0 });
       if (fs.existsSync(this.queueFile)) {
         const data = fs.readFileSync(this.queueFile, 'utf8');
         this.queue = JSON.parse(data);
+        queueLogger.info('Queue loaded successfully', { instanceId: this.instanceId, queueLength: this.queue.length });
       } else {
         this.queue = [];
+        queueLogger.info('No queue file found, starting empty queue', { instanceId: this.instanceId });
       }
     } catch (error) {
       queueLogger.warn('Failed to load queue from file, using empty queue', {
+        instanceId: this.instanceId,
         error: error.message,
         stack: error.stack,
         backupCreated: fs.existsSync(this.queueFile)
@@ -433,20 +441,23 @@ class PromptQueue {
    */
   async saveQueue() {
     try {
+      queueLogger.info('Saving queue to file', { instanceId: this.instanceId, queueLength: this.queue.length, queueFile: this.queueFile });
       // Create backup of current queue if it exists
       if (fs.existsSync(this.queueFile)) {
         const backupPath = path.join(this.backupDir, `queue_backup_${Date.now()}.json`);
         fs.copyFileSync(this.queueFile, backupPath);
         this.cleanOldBackups();
       }
-
+  
       // Write to temporary file first
       const tempFile = `${this.queueFile}.tmp`;
       fs.writeFileSync(tempFile, JSON.stringify(this.queue, null, 2));
-
+  
       // Atomic move
       fs.renameSync(tempFile, this.queueFile);
+      queueLogger.info('Queue saved successfully', { instanceId: this.instanceId, queueFile: this.queueFile });
     } catch (error) {
+      queueLogger.error('Failed to save queue', { instanceId: this.instanceId, error: error.message, stack: error.stack });
       throw new Error(`Failed to save queue: ${error.message}`);
     }
   }

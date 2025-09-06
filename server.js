@@ -135,49 +135,9 @@ function startMCPServer() {
  * Start Queue server child process
  */
 function startQueueServer() {
-  return new Promise((resolve, reject) => {
-    console.log('Starting Queue Server...');
-
-    queueChildProcess = spawn('node', ['server/queue-server.js'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, QUEUE_PORT: resolvedPorts.QUEUE },
-      cwd: __dirname
-    });
-
-    let stdoutBuffer = '';
-
-    queueChildProcess.stdout.on('data', (data) => {
-      stdoutBuffer += data.toString();
-      console.log(`[QUEUE] ${data.toString().trim()}`);
-    });
-
-    queueChildProcess.stderr.on('data', (data) => {
-      console.error(`[QUEUE ERR] ${data.toString().trim()}`);
-    });
-
-    queueChildProcess.on('close', (code) => {
-      console.log(`Queue Server exited with code ${code}`);
-    });
-
-    queueChildProcess.on('error', (err) => {
-      console.error('Failed to start Queue Server:', err);
-      reject(err);
-    });
-
-    // Wait for startup message
-    const startupTimeout = setTimeout(() => {
-      reject(new Error('Queue Server startup timeout'));
-    }, 30000);
-
-    queueChildProcess.stdout.on('data', (data) => {
-      const output = data.toString();
-      if (output.includes('Queue Server running')) {
-        clearTimeout(startupTimeout);
-        console.log('Queue Server started successfully');
-        resolve();
-      }
-    });
-  });
+  // Queue server spawn disabled - queue management consolidated to mcp_server.js to prevent duplicate instances and race conditions
+  console.log('Queue Server spawn disabled - queue management handled by mcp_server.js');
+  return Promise.resolve();
 }
 
 /**

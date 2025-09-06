@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Generate Request",
+  "description": "Request schema for generating AI content via MCP",
+  "type": "object",
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "description": "The prompt to send to the AI model",
+      "minLength": 1,
+      "maxLength": 10000
+    },
+    "task": {
+      "type": "string",
+      "description": "Type of task (e.g., 'generation', 'analysis')",
+      "enum": ["generation", "analysis", "code", "explanation"],
+      "default": "generation"
+    },
+    "options": {
+      "type": "object",
+      "description": "Additional options for the AI generation",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Preferred model name"
+        },
+        "maxTokens": {
+          "type": "integer",
+          "description": "Maximum tokens to generate",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "temperature": {
+          "type": "number",
+          "description": "Creativity level",
+          "minimum": 0,
+          "maximum": 2
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["prompt"],
+  "additionalProperties": false
+}

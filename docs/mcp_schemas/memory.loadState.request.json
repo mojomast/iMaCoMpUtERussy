@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the RAM state to load",
+      "pattern": "^[a-zA-Z0-9_\\-]+$", 
+      "minLength": 1,
+      "maxLength": 50
+    },
+    "targetAddress": {
+      "type": "integer",
+      "description": "Optional target address to load state at (default: 0x0000)",
+      "minimum": 0,
+      "maximum": 65535,
+      "default": 0
+    },
+    "range": {
+      "type": "object",
+      "description": "Optional memory range to load (default: full saved range)",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "end": {
+          "type": "integer", 
+          "minimum": 0,
+          "maximum": 65535
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

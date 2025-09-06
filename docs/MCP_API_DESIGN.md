@@ -531,10 +531,303 @@ All endpoints use consistent error response format:
 
 **Maps to:** `assemble(sourceCode)`
 
+#### 9. Assemble, Load and Run Source Code
+**Endpoint:** `POST /api/mcp/assemble/load-and-run`
+**RPC:** `assemble.loadAndRun`
+
+**Request Schema:**
+```json
+{
+  "type": "object",
+  "required": ["source"],
+  "properties": {
+    "source": { "type": "string" },
+    "resetCPU": { "type": "boolean", "default": true },
+    "maxSteps": { "type": "integer", "minimum": 1, "maximum": 10000 }
+  }
+}
+```
+
+**Response Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "assembledBytes": { "type": "integer" },
+        "bytesLoaded": { "type": "integer" },
+        "origin": { "type": "integer" },
+        "maxSteps": { "type": "integer" },
+        "executionResult": { "type": "object" }
+      }
+    }
+  }
+}
+```
+
+**Example Request:**
+```json
+{
+  "source": ".org $0600\nLDA #$42\nSTA $00\nHLT",
+  "resetCPU": true,
+  "maxSteps": 100
+}
+```
+
+**Maps to:** `assemble()`, `memory.loadProgram()`, `cpu.reset()`, `cpu.run()`
+
+### AI Operations
+
+#### 10. Generate Content with AI
+**Endpoint:** `POST /api/mcp/ai/generate`
+**RPC:** `ai.generate`
+
+**Request Schema:**
+```json
+{
+  "type": "object",
+  "required": ["prompt"],
+  "properties": {
+    "prompt": { "type": "string", "minLength": 1, "maxLength": 10000 },
+    "task": { "type": "string", "enum": ["generation", "analysis", "code", "explanation"], "default": "generation" },
+    "options": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "maxTokens": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 }
+      }
+    }
+  }
+}
+```
+
+**Response Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "content": { "type": "string" },
+        "model": { "type": "string" },
+        "tokensUsed": { "type": "integer" },
+        "generatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
+```
+
+**Example Request:**
+```json
+{
+  "prompt": "Write a brief assembly program that loads the value 42 into the accumulator",
+  "task": "code",
+  "options": { "model": "gpt-4", "maxTokens": 200, "temperature": 0.7 }
+}
+```
+
+**Maps to:** AI language model API calls for content generation
+
+### State Management Operations
+
+#### 11. Save Emulator State
+**Endpoint:** `POST /api/mcp/memory/save-state`
+**RPC:** `memory.saveState`
+
+**Request Schema:**
+```json
+{
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "minLength": 1, "maxLength": 50 },
+    "includeCPU": { "type": "boolean", "default": true },
+    "includeBreakpoints": { "type": "boolean", "default": true },
+    "description": { "type": "string", "maxLength": 255 },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}
+```
+
+**Response Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "savedAt": { "type": "string", "format": "date-time" },
+        "compressedSize": { "type": "integer" },
+        "uncompressedSize": { "type": "integer" },
+        "stateHash": { "type": "string" }
+      }
+    }
+  }
+}
+```
+
+**Example Request:**
+```json
+{
+  "name": "fibonacci_program",
+  "includeCPU": true,
+  "includeBreakpoints": true,
+  "description": "Fibonacci calculation demo",
+  "tags": ["demo", "fibonacci"]
+}
+```
+
+**Maps to:** Complete emulator state serialization and storage
+
+#### 12. Load Emulator State
+**Endpoint:** `POST /api/mcp/memory/load-state`
+**RPC:** `memory.loadState`
+
+**Request Schema:**
+```json
+{
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$" },
+    "targetAddress": { "type": "integer", "default": 0 },
+    "loadCPUState": { "type": "boolean", "default": true },
+    "loadBreakpoints": { "type": "boolean", "default": true }
+  }
+}
+```
+
+## New Features Troubleshooting Guide
+
+### AI Generation Issues
+
+#### Problem: AI generate requests timeout
+**Symptoms:** Long response times or timeout errors
+**Solution:** Reduce `maxTokens` in request options or check AI service status
+
+#### Problem: AI responses are empty or malformed
+**Symptoms:** Success response but empty content
+**Solution:** Adjust temperature (try lower values for code generation) or revise prompt clarity
+
+### Assembly LoadAndRun Issues
+
+#### Problem: Assembly fails with timeout
+**Symptoms:** Request returns with "timeout exceeded" error
+**Solution:**
+```json
+{
+  "source": "your_code_here",
+  "maxSteps": 500,  // Reduce execution steps
+  "resetCPU": true
+}
+```
+
+#### Problem: Invalid assembly source
+**Symptoms:** "INVALID_ASSEMBLY" error
+**Common Issues:**
+- Missing `.org` directive
+- Invalid instruction syntax
+- Undefined symbols
+- Memory address conflicts
+
+**Solution:** Validate assembly syntax against instruction set documentation
+
+### State Management Issues
+
+#### Problem: State save fails with quota exceeded
+**Symptoms:** Large state objects fail to save
+**Solution:**
+```json
+{
+  "name": "compact_save",
+  "includeCPU": true,
+  "includeBreakpoints": false,  // Disable to reduce size
+  "compressedSave": true
+}
+```
+
+#### Problem: State load fails with corruption
+**Symptoms:** "State validation failed" error
+**Solution:**
+- Ensure state file wasn't modified externally
+- Use state verification endpoint before loading
+- Check server-side state validation logs
+
+#### Problem: State loading disrupts breakpoints
+**Symptoms:** Breakpoints lost after state load
+**Solution:**
+```json
+{
+  "name": "state_with_breakpoints",
+  "loadCPUState": true,
+  "loadBreakpoints": true
+}
+```
+
+### Performance Optimization Tips
+
+#### Memory Usage Optimization
+- Use `memory.loadState` with selective loading options
+- Set `compressedSave: true` for space-constrained environments
+- Configure memory view with pagination for large ranges
+
+#### Network Optimization
+```json
+// Reduce payload size for mobile connections
+{
+  "options": {
+    "maxTokens": 100,  // Reduce for mobile
+    "model": "gpt-3.5-turbo"  // Use less resource-intensive model
+  }
+}
+```
+```
+
+**Response Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "loadedAt": { "type": "string", "format": "date-time" },
+        "memoryRange": { "type": "object", "properties": {"start": {"type": "integer"}, "end": {"type": "integer"}} },
+        "cpuRestored": { "type": "boolean" },
+        "breakpointsRestored": { "type": "integer" }
+      }
+    }
+  }
+}
+```
+
+**Example Request:**
+```json
+{
+  "name": "fibonacci_program",
+  "loadCPUState": true,
+  "loadBreakpoints": true
+}
+```
+
+**Maps to:** State deserialization and emulator restoration
+
 ### Terminal I/O Operations
 
-#### 9. Write to Terminal
-**Endpoint:** `POST /api/mcp/terminal/write`  
+#### 13. Write to Terminal
+**Endpoint:** `POST /api/mcp/terminal/write`
 **RPC:** `terminal.write`
 
 **Request Schema:**
@@ -1079,6 +1372,58 @@ POST /api/mcp/video/write
 // Program must contain VUP instruction at PC
 POST /api/mcp/cpu/step
 {}
+```
+
+### Flow 4: Assemble and Run Code (New)
+```json
+// 1. One-shot assemble, load, and run
+POST /api/mcp/assemble/load-and-run
+{
+  "source": ".org $0600\nLDA #$42\nSTA $F1\nJMP $0600",
+  "resetCPU": true,
+  "maxSteps": 1000
+}
+```
+
+### Flow 5: AI-Assisted Development (New)
+```json
+// 1. Generate assembly from natural language
+POST /api/mcp/ai/generate
+{
+  "prompt": "Write assembly code to display 'HELLO' on the terminal",
+  "task": "code",
+  "options": {
+    "maxTokens": 200,
+    "temperature": 0.3
+  }
+}
+
+// 2. Assemble the generated code
+POST /api/mcp/assemble/load-and-run
+{
+  "source": "[AI generated assembly code]",
+  "resetCPU": true,
+  "maxSteps": 1000
+}
+```
+
+### Flow 6: Save/Load Emulator State (New)
+```json
+// 1. Save current state
+POST /api/mcp/memory/save-state
+{
+  "name": "before-debug",
+  "description": "State before debugging issue",
+  "tags": ["debug", "problem-123"]
+}
+
+// 2. Load saved state later
+POST /api/mcp/memory/load-state
+{
+  "name": "before-debug",
+  "loadCPUState": true,
+  "loadBreakpoints": true
+}
 ```
 
 ## Aggregate Schema For Programmatic Consumption

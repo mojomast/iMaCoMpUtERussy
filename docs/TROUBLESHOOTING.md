@@ -5,16 +5,17 @@ Common issues and solutions for iMaCoMpUtERussy steganography system.
 ## Table of Contents
 
 - [Quick Diagnostic](#quick-diagnostic)
+- [Resolved Issues](#resolved-issues)
 - [Common Error Messages](#common-error-messages)
-  - [Encoding Errors](#encoding-errors)
-  - [Decoding Errors](#decoding-errors)
-  - [YouTube API Errors](#youtube-api-errors)
-  - [Browser Compatibility Issues](#browser-compatibility-issues)
+   - [Encoding Errors](#encoding-errors)
+   - [Decoding Errors](#decoding-errors)
+   - [YouTube API Errors](#youtube-api-errors)
+   - [Browser Compatibility Issues](#browser-compatibility-issues)
 - [Interactive Emulator Issues](#interactive-emulator-issues)
-  - [UI Layout Problems](#ui-layout-problems)
-  - [I/O and Terminal Issues](#io-and-terminal-issues)
-  - [Assembly Loading Problems](#assembly-loading-problems)
-  - [Video Graphics Issues](#video-graphics-issues)
+   - [UI Layout Problems](#ui-layout-problems)
+   - [I/O and Terminal Issues](#io-and-terminal-issues)
+   - [Assembly Loading Problems](#assembly-loading-problems)
+   - [Video Graphics Issues](#video-graphics-issues)
 - [Performance Issues](#performance-issues)
 - [Capacity Estimation Issues](#capacity-estimation-issues)
 - [Debug Procedures](#debug-procedures)
@@ -61,6 +62,62 @@ curl -I https://www.youtube.com/get_video_info?video_id=dQw4w9WgXcQ
 # Test localhost server
 curl -I http://localhost:8000
 ```
+
+## Resolved Issues
+
+### Queue Management Consolidation
+
+**Issue**: Queue race conditions between concurrent operations from multiple server instances.
+
+**Resolution**: Queue management consolidated to `mcp_server.js` only. The `server.js` now disables separate queue server spawning to prevent duplicate instances and race conditions.
+
+**Impact**:
+- Eliminates queue race conditions
+- Single source of truth for queue operations
+- Improved reliability of concurrent requests
+- Better error handling for queue operations
+
+**Code Changes**:
+- Modified [`server.js`](server.js) `startQueueServer()` to return disabled message
+- Consolidated queue logic in [`server/mcp_server.js`](server/mcp_server.js)
+- Added proper process management for child processes
+
+### Schema Validation Warnings
+
+**Issue**: Date-time format schema validation warnings causing failed validations.
+
+**Resolution**: Implemented custom date-time validator in central validation system.
+
+**Impact**:
+- No more schema validation warnings for date-time fields
+- Consistent date-time handling across all APIs
+- Improved validation reliability
+- Better error messages for invalid formats
+
+**Code Changes**:
+- Enhanced [`lib/validators.js`](lib/validators.js) with custom date-time validator
+- Updated AJV schemas to use custom validators
+- Added validation testing for edge cases
+
+**Usage**:
+```javascript
+import { validateRequest } from './lib/validators.js';
+
+// Custom validators automatically handle date-time validation
+const validatedData = validateRequest(requestData, schemaType);
+```
+
+### Server Startup Issues
+
+**Issue**: Multiple server instances causing port conflicts and initialization errors.
+
+**Resolution**: Consolidated server architecture with single `server.js` spawning only `mcp_server.js`.
+
+**Impact**:
+- Cleaner startup process
+- Reduced memory usage
+- Fewer port conflicts
+- Simplified debugging
 
 ## Common Error Messages
 

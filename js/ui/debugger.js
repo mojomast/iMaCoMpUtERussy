@@ -71,6 +71,16 @@ export function initializeDebugger(rootElementId) {
                 <label>Speed: <span id="speed-value">100</span> Hz</label>
                 <input type="range" id="speed-slider" min="1" max="1000" value="100">
             </div>
+            <div class="breakpoint-controls">
+                <label>Breakpoints:</label>
+                <div class="breakpoint-manager">
+                    <input type="text" id="breakpoint-address" placeholder="0x0600" size="8" />
+                    <button id="add-breakpoint-btn">Add</button>
+                    <button id="remove-breakpoint-btn">Remove</button>
+                    <button id="list-breakpoints-btn">List</button>
+                    <div id="breakpoints-list" style="margin-top: 5px; font-size: 10px; max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.5); padding: 5px;"></div>
+                </div>
+            </div>
         `;
         rootElement.appendChild(controlsDiv);
         console.log('Controls container created and appended');
@@ -127,6 +137,28 @@ export function initializeDebugger(rootElementId) {
     if (loadSampleBtn) {
         loadSampleBtn.addEventListener('click', handleLoadSample);
     }
+
+    // Breakpoint controls
+    const breakpointAddressInput = document.getElementById('breakpoint-address');
+    const addBreakpointBtn = document.getElementById('add-breakpoint-btn');
+    const removeBreakpointBtn = document.getElementById('remove-breakpoint-btn');
+    const listBreakpointsBtn = document.getElementById('list-breakpoints-btn');
+    const breakpointsList = document.getElementById('breakpoints-list');
+
+    if (addBreakpointBtn) {
+        addBreakpointBtn.addEventListener('click', () => handleAddBreakpoint(breakpointAddressInput.value));
+    }
+
+    if (removeBreakpointBtn) {
+        removeBreakpointBtn.addEventListener('click', () => handleRemoveBreakpoint(breakpointAddressInput.value));
+    }
+
+    if (listBreakpointsBtn) {
+        listBreakpointsBtn.addEventListener('click', () => handleListBreakpoints());
+    }
+
+    // Initialize breakpoint list
+    updateBreakpointList();
 }
 
 /**
@@ -329,12 +361,314 @@ function updateStatus(message, type = 'info') {
 }
 
 /**
+ * Breakpoint management functions
+ */
+let breakpoints = new Set(); // Store breakpoint addresses
+
+/**
+ * Add breakpoint at address
+ */
+async function handleAddBreakpoint(addressStr) {
+    try {
+        const address = parseInt(addressStr, 16);
+        if (isNaN(address) || address < 0 || address > 0xFFFF) {
+            updateStatus('Invalid breakpoint address', 'error');
+            return;
+        }
+
+        if (breakpoints.has(address)) {
+            updateStatus(`Breakpoint already exists at 0x${address.toString(16).toUpperCase()}`, 'warning');
+            return;
+        }
+
+        breakpoints.add(address);
+        updateBreakpointList();
+        updateStatus(`Breakpoint added at 0x${address.toString(16).toUpperCase()}`, 'success');
+
+        // Notify MCP if available
+        if (window.mcpClient && window.mcpClient.serverAvailable) {
+            try {
+                const result = await window.mcpClient.post('/mcp/debug/breakpoints', {
+                    action: 'set',
+                    address
+                });
+                if (result.success) {
+                    console.log('MCP breakpoint set:', result);
+                }
+            } catch (error) {
+                console.warn('MCP breakpoint set failed:', error);
+            }
+        }
+
+        // Refresh display
+        refreshDisplay();
+
+    } catch (error) {
+        updateStatus(`Failed to add breakpoint: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Remove breakpoint at address
+ */
+async function handleRemoveBreakpoint(addressStr) {
+    try {
+        const address = parseInt(addressStr, 16);
+        if (isNaN(address)) {
+            updateStatus('Invalid address', 'error');
+            return;
+        }
+
+        if (!breakpoints.has(address)) {
+            updateStatus(`No breakpoint at 0x${address.toString(16).toUpperCase()}`, 'warning');
+            return;
+        }
+
+        breakpoints.delete(address);
+        updateBreakpointList();
+        updateStatus(`Breakpoint removed at 0x${address.toString(16).toUpperCase()}`, 'success');
+
+        // Notify MCP if available
+        if (window.mcpClient && window.mcpClient.serverAvailable) {
+            try {
+                const result = await window.mcpClient.post('/mcp/debug/breakpoints', {
+                    action: 'remove',
+                    address
+                });
+                if (result.success) {
+                    console.log('MCP breakpoint removed:', result);
+                }
+            } catch (error) {
+                console.warn('MCP breakpoint remove failed:', error);
+            }
+        }
+
+        refreshDisplay();
+
+    } catch (error) {
+        updateStatus(`Failed to remove breakpoint: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * List all breakpoints
+ */
+function handleListBreakpoints() {
+    updateBreakpointList();
+    updateStatus(`Found ${breakpoints.size} breakpoint(s)`, 'info');
+}
+
+/**
+ * Update breakpoint list display
+ */
+function updateBreakpointList() {
+    if (!breakpointsList) return;
+
+    if (breakpoints.size === 0) {
+        breakpointsList.innerHTML = '<span style="color: #666;">No breakpoints set</span>';
+        return;
+    }
+
+    const breakpointArray = Array.from(breakpoints).sort((a, b) => a - b);
+    breakpointsList.innerHTML = breakpointArray.map(addr =>
+        `<div style="margin: 2px 0; padding: 2px; background: rgba(255,0,0,0.1); border-left: 3px solid #ff0000;">
+            0x${addr.toString(16).toUpperCase()}
+        </div>`
+    ).join('');
+}
+
+/**
+ * Check if current PC is at a breakpoint
+ */
+function checkBreakpoint() {
+    if (cpu && breakpoints.has(cpu.PC)) {
+        // Stop execution and notify
+        if (runIntervalId) {
+            clearInterval(runIntervalId);
+            runIntervalId = null;
+            const runBtn = document.getElementById('run-btn');
+            if (runBtn) runBtn.textContent = 'Run';
+        }
+        
+        updateStatus(`Breakpoint hit at 0x${cpu.PC.toString(16).toUpperCase()}`, 'warning');
+        
+        // Notify MCP
+        if (window.mcpWebSocket && window.mcpWebSocket.readyState === WebSocket.OPEN) {
+            window.mcpWebSocket.send(JSON.stringify({
+                type: 'debug.breakpoint',
+                data: { pc: cpu.PC, message: 'Breakpoint hit' },
+                timestamp: new Date().toISOString()
+            }));
+        }
+        
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Enhanced step function with breakpoint checking
+ */
+async function handleStep() {
+    if (cpu) {
+        const wasAtBreakpoint = checkBreakpoint();
+        if (wasAtBreakpoint) {
+            updateStatus('Stepped from breakpoint', 'info');
+            return;
+        }
+        
+        cpu.step();
+        renderRegisters();
+        
+        // Check breakpoint after step
+        checkBreakpoint();
+    }
+}
+
+/**
+ * Enhanced run function with breakpoint checking
+ */
+function handleRun() {
+    const runBtn = document.getElementById('run-btn');
+    if (!runBtn) return;
+
+    if (runIntervalId) {
+        // Stop running
+        clearInterval(runIntervalId);
+        runIntervalId = null;
+        runBtn.textContent = 'Run';
+        updateStatus('Execution stopped', 'info');
+    } else {
+        // Start running with breakpoint checking
+        if (checkBreakpoint()) {
+            updateStatus('Cannot run - breakpoint at current PC', 'warning');
+            return;
+        }
+        
+        const interval = 1000 / currentSpeed;
+        runIntervalId = setInterval(() => {
+            if (cpu) {
+                // Check breakpoint before each step
+                if (checkBreakpoint()) {
+                    clearInterval(runIntervalId);
+                    runIntervalId = null;
+                    runBtn.textContent = 'Run';
+                    return;
+                }
+                
+                cpu.step();
+                renderRegisters();
+            }
+        }, interval);
+        runBtn.textContent = 'Stop';
+        updateStatus('Execution started', 'info');
+    }
+}
+
+/**
+ * MCP WebSocket integration for debugger
+ */
+if (typeof window !== 'undefined' && window.mcpWebSocket) {
+    // Override the existing WebSocket message handler to include debug events
+    const originalOnMessage = window.mcpWebSocket.onmessage;
+    
+    window.mcpWebSocket.onmessage = function(event) {
+        try {
+            const message = JSON.parse(event.data);
+            const { type, data } = message;
+            
+            // Handle debug breakpoint events
+            if (type === 'debug.breakpoint') {
+                updateStatus(`MCP Debug: ${data.message} at 0x${data.pc?.toString(16).toUpperCase()}`, 'warning');
+                
+                // Stop execution if running
+                if (runIntervalId) {
+                    clearInterval(runIntervalId);
+                    runIntervalId = null;
+                    const runBtn = document.getElementById('run-btn');
+                    if (runBtn) runBtn.textContent = 'Run';
+                }
+                
+                // Highlight current PC in memory view if available
+                if (typeof window.refreshMemoryDisplay === 'function') {
+                    window.refreshMemoryDisplay();
+                }
+                
+                return; // Don't pass to original handler
+            }
+            
+            // Handle debug step requests from MCP
+            if (type === 'debug.step') {
+                handleStep();
+                
+                // Respond to MCP
+                if (window.mcpWebSocket && window.mcpWebSocket.readyState === WebSocket.OPEN) {
+                    window.mcpWebSocket.send(JSON.stringify({
+                        type: 'debug.step.response',
+                        data: {
+                            pc: cpu ? cpu.PC : null,
+                            registers: cpu ? {
+                                A: cpu.A, X: cpu.X, Y: cpu.Y,
+                                P: cpu.P, SP: cpu.SP
+                            } : null
+                        },
+                        timestamp: new Date().toISOString()
+                    }));
+                }
+                
+                return;
+            }
+            
+            // Handle debug run requests from MCP
+            if (type === 'debug.run') {
+                const maxSteps = data.maxSteps || 1000;
+                handleRun();
+                
+                // Run for specified steps then stop
+                setTimeout(() => {
+                    if (runIntervalId) {
+                        clearInterval(runIntervalId);
+                        runIntervalId = null;
+                        const runBtn = document.getElementById('run-btn');
+                        if (runBtn) runBtn.textContent = 'Run';
+                        updateStatus(`MCP Run completed: ${maxSteps} steps`, 'info');
+                    }
+                }, maxSteps * (1000 / currentSpeed));
+                
+                return;
+            }
+            
+            // Pass other messages to original handler
+            if (originalOnMessage) {
+                originalOnMessage.call(this, event);
+            }
+            
+        } catch (error) {
+            console.error('Debugger MCP message handling error:', error);
+        }
+    };
+    
+    console.log('✅ Debugger MCP integration initialized');
+}
+
+/**
+ * Export enhanced functions for use by other modules
+ */
+export {
+    handleStep as stepWithBreakpoints,
+    handleRun as runWithBreakpoints,
+    checkBreakpoint,
+    breakpoints,
+    updateBreakpointList
+};
+
+/**
  * TODO: Implement full debugger features:
  * - Web worker offload for run loop to avoid blocking UI
  * - Cycle-accurate timing instead of simple setInterval
- * - Breakpoint setting and management
- * - Memory inspection integration
- * - Step over/step into functionality
+ * - Enhanced breakpoint management (conditional breakpoints, step over/into)
+ * - Memory inspection integration with breakpoints
  * - Call stack display
- * - Performance profiling
+ * - Performance profiling with MCP reporting
+ * - Remote debugging via WebSocket
  */

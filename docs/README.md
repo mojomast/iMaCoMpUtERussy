@@ -47,34 +47,35 @@ Welcome to the iMaCoMpUtERussy documentation! This interactive 8-bit emulator pr
 - **[Video Embedding Guide](./VIDEO_EMBEDDING_GUIDE.md)** - Steganography usage
 ### 🖥️ MCP Server Integration
 - **[MCP Server Documentation](./MCP_SERVER_README.md)** - Complete MCP server setup and usage
-  - Server architecture and configuration
-  - Client integration examples
-  - Debugging capabilities and tools
-  - RooCode development kit integration
+   - **Consolidated Architecture**: `server.js` now spawns only `mcp_server.js` (queue management integrated)
+   - Server architecture and configuration
+   - Client integration examples
+   - Debugging capabilities and tools
+   - RooCode development kit integration
 
 - **[MCP API Documentation](./MCP_API_DOCS.md)** - Comprehensive API reference
-  - Full endpoint specifications
-  - Request/response schemas
-  - Authentication and security
-  - Error handling and troubleshooting
+   - Full endpoint specifications including `/mcp/video/setPixel`, `/mcp/cpu/*`
+   - Request/response schemas with AJV validation
+   - Authentication and security
+   - Error handling and troubleshooting
 
 - **[MCP API Design](./MCP_API_DESIGN.md)** - Technical architecture guide
-  - Protocol design principles
-  - Schema definitions and validation
-  - Performance optimization techniques
-  - Extensibility and customization
+   - Protocol design principles
+   - Schema definitions and validation
+   - Performance optimization techniques
+   - Extensibility and customization
 
 - **[MCP API Examples](./MCP_API_EXAMPLES.md)** - Practical implementation guide
-  - Real-world usage patterns
-  - Integration examples with external tools
-  - Testing and validation frameworks
-  - Production deployment strategies
+   - Real-world usage patterns
+   - Integration examples with external tools
+   - Testing and validation frameworks
+   - Production deployment strategies
 
 - **[Save/Load System Architecture](./SAVE_LOAD_SYSTEM_ARCHITECTURE.md)** - Program persistence framework
-  - Rich metadata schema with 50+ fields
-  - Semantic versioning and lineage tracking
-  - Advanced search and filtering
-  - Tiered storage architecture
+   - Rich metadata schema with 50+ fields
+   - Semantic versioning and lineage tracking
+   - Advanced search and filtering
+   - Tiered storage architecture
 
 - **[Troubleshooting](./TROUBLESHOOTING.md)** - Common issues and solutions
 
@@ -108,9 +109,12 @@ Visit **[Development Progress](./DEVELOPMENT_PROGRESS.md)** to see what's implem
 - **Custom Program Support**: Load your own assembly files
 
 ### Advanced Features
-- **Memory-Mapped I/O**: Programs interact through memory addresses
+- **Memory-Mapped I/O**: Programs interact through memory addresses ($F0-$F2 for terminal, 0xFF00-0xFFFF for interrupts)
 - **CPU Status Monitoring**: RUNNING/HALTED with automatic detection
+- **Hardware Interrupts**: Support for timer, keyboard, video VSYNC, and disk I/O interrupts
 - **Speed Control**: Adjustable execution from 1-1000 Hz
+- **Consolidated Server Architecture**: Single `server.js` spawns only `mcp_server.js` (no separate queue server)
+- **AJV Schema Validation**: Centralized validation with custom validators in `lib/validators.js`
 - **Comprehensive Testing**: Full test suite with 90+ tests
 
 ## 📋 Quick Reference

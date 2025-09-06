@@ -1044,4 +1044,224 @@ button.loading::after {
         font-size: 11px;
     }
 }
+
+/* Layout Manager Styles for Retro Theme Compatibility */
+#panel-sidebar {
+    font-family: 'Courier New', monospace;
+    color: #00ff00;
+}
+
+#panel-sidebar .sidebar-header h3 {
+    color: #00ff00;
+    border-bottom: 1px solid #00ff00;
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+}
+
+#panel-sidebar .panel-control {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px;
+    margin: 5px 0;
+    background: rgba(0, 255, 0, 0.05);
+    border: 1px solid #00ff00;
+}
+
+#panel-sidebar .panel-control label {
+    color: #00ff00;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+#panel-sidebar .panel-control input[type="checkbox"] {
+    margin-right: 5px;
+}
+
+#panel-sidebar .reset-panel {
+    background: rgba(255, 0, 0, 0.2);
+    color: #ff6666;
+    border: 1px solid #ff6666;
+    padding: 2px 6px;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+#panel-sidebar .reset-panel:hover {
+    background: rgba(255, 0, 0, 0.4);
+}
+
+#panel-sidebar .layout-actions {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #00ff00;
+}
+
+#panel-sidebar .layout-actions button {
+    width: 100%;
+    margin: 5px 0;
+    background: rgba(0, 255, 0, 0.1);
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    padding: 8px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+}
+
+#panel-sidebar .layout-actions button:hover {
+    background: rgba(0, 255, 0, 0.2);
+}
+
+#sidebar-toggle {
+    font-family: 'Courier New', monospace;
+    transition: all 0.2s ease;
+}
+
+#sidebar-toggle:hover {
+    background: rgba(0, 255, 0, 0.2);
+    box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+}
+
+/* Drag and Drop Styles */
+.drag-handle {
+    cursor: grab;
+    user-select: none;
+    padding: 2px 4px;
+    background: rgba(0, 255, 0, 0.1);
+    border: 1px solid #00ff00;
+    font-size: 12px;
+    margin-left: auto;
+    margin-right: 5px;
+    display: inline-block;
+    width: 20px;
+    text-align: center;
+    font-family: 'Courier New', monospace;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+    background: rgba(0, 255, 0, 0.2);
+}
+
+.panel.drop-zone {
+    border: 2px dashed #00ff00 !important;
+    background: rgba(0, 255, 0, 0.05) !important;
+    opacity: 0.8;
+}
+
+/* Resize Handle Styles */
+.resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 15px;
+    height: 15px;
+    cursor: se-resize;
+    background: rgba(0, 255, 0, 0.2);
+    border: 1px solid #00ff00;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    user-select: none;
+    z-index: 10;
+    font-family: 'Courier New', monospace;
+}
+
+.resize-handle:hover {
+    background: rgba(0, 255, 0, 0.4);
+}
+
+/* Dynamic Panel Styles */
+#layout-container .panel {
+    position: absolute;
+    resize: both;
+    overflow: auto;
+    min-width: 200px;
+    min-height: 150px;
+    z-index: 1;
+    transition: all 0.3s ease;
+}
+
+#layout-container .panel:hover {
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+    z-index: 2;
+}
+
+/* Panel being dragged */
+#layout-container .panel.dragging {
+    opacity: 0.7;
+    transform: rotate(2deg);
+    z-index: 1000;
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 768px) {
+    #panel-sidebar {
+        width: 200px;
+    }
+    
+    #sidebar-toggle {
+        left: 5px;
+        top: 55px;
+        padding: 3px 6px;
+        font-size: 11px;
+    }
+    
+    #layout-container {
+        padding: 5px;
+    }
+    
+    #layout-container .panel {
+        min-width: 150px;
+        min-height: 120px;
+    }
+    
+    .drag-handle {
+        width: 15px;
+        font-size: 10px;
+    }
+    
+    .resize-handle {
+        width: 12px;
+        height: 12px;
+        font-size: 8px;
+    }
+}
+
+/* Animation for smooth transitions */
+@keyframes panelSlide {
+    from { transform: translateY(10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+#layout-container .panel {
+    animation: panelSlide 0.3s ease-out;
+}
+
+/* Status messages for layout operations */
+.layout-status {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #00ff00;
+    padding: 10px;
+    border: 1px solid #00ff00;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    z-index: 10000;
+    display: none;
+}
+
+.layout-status.show {
+    display: block;
+    animation: fadeInOut 2s ease;
+}
+
+@keyframes fadeInOut {
+    0%, 100% { opacity: 0; }
+    50% { opacity: 1; }
+}
 }

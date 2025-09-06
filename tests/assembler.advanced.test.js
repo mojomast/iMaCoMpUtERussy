@@ -1,15 +1,6 @@
 // ES Module for advanced assembler tests: indexed addressing and expression evaluation
 import { assemble } from '../js/assembler.js';
-
-// Helper function to run a test and log result
-function test(name, testFn) {
-  try {
-    testFn();
-    console.log(`PASS: ${name}`);
-  } catch (e) {
-    console.error(`FAIL: ${name} - ${e.message}`);
-  }
-}
+import { test, runTests } from './utils/test-runner.js';
 
 // Test indexed addressing modes
 function testIndexedAddressing() {
@@ -209,11 +200,13 @@ HLT
 }
 
 // Run all tests
-test('Indexed Addressing', testIndexedAddressing);
-test('Expression Evaluation', testExpressionEvaluation);
-test('Expressions with Labels', testExpressionsWithLabels);
-test('Error Handling', testErrorHandling);
-test('Mixed Features', testMixedFeatures);
+runTests([
+  test('Indexed Addressing', testIndexedAddressing),
+  test('Expression Evaluation', testExpressionEvaluation),
+  test('Expressions with Labels', testExpressionsWithLabels),
+  test('Error Handling', testErrorHandling),
+  test('Mixed Features', testMixedFeatures),
+]);
 
 // TODO: Add tests for indirect addressing modes ((ind),X ; (ind),Y)
 // TODO: Add tests for more expression operators (*, /, parentheses)

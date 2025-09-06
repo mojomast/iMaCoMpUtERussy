@@ -1,11 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "iMaCoMpUtERussy MCP API Schemas",
-  "description": "Machine-readable schema collection for the iMaCoMpUtERussy MCP Server API",
-  "client_usage": {
-    "node_js_example": "const Ajv = require('ajv');\nconst fs = require('fs');\nconst schemas = JSON.parse(fs.readFileSync('docs/mcp_schemas.json'));\nconst ajv = new Ajv();\nconst validate = ajv.addSchema(schemas.schemas);\nconst isValid = validate({'$ref':'cpu.reset.request.json'}, requestBody);",
-    "python_example": "import json\nfrom jsonschema import validate\n\nwith open('docs/mcp_schemas.json') as f:\n    schemas = json.load(f)\n\n# Validate against schema\nvalidate(instance=request_data, schema=schemas['cpu']['reset']['request'])"
-  },
   "type": "object",
   "properties": {
     "schemas": {
@@ -130,9 +125,6 @@
               "properties": {
                 "request": {
                   "$ref": "terminal.write.request.json"
-                },
-                "response": {
-                  "$ref": "terminal.write.response.json"
                 }
               }
             },
@@ -173,93 +165,6 @@
                 },
                 "response": {
                   "$ref": "programs.load.response.json"
-                }
-              }
-            },
-            "save": {
-              "type": "object",
-              "properties": {
-                "request": {
-                  "$ref": "programs.save.request.json"
-                },
-                "response": {
-                  "$ref": "programs.save.response.json"
-                }
-              }
-            }
-          }
-        },
-        "video": {
-          "type": "object",
-          "properties": {
-            "setPixel": {
-              "type": "object",
-              "properties": {
-                "request": {
-                  "$ref": "video.setPixel.request.json"
-                },
-                "response": {
-                  "$ref": "video.setPixel.response.json"
-                }
-              }
-            },
-            "update": {
-              "type": "object",
-              "properties": {
-                "request": {
-                  "$ref": "video.update.request.json"
-                },
-                "response": {
-                  "$ref": "video.update.response.json"
-                }
-              }
-            },
-            "clear": {
-              "type": "object",
-              "properties": {
-                "request": {
-                  "$ref": "video.clear.request.json"
-                },
-                "response": {
-                  "$ref": "video.clear.response.json"
-                }
-              }
-            }
-          }
-        },
-        "debug": {
-          "type": "object",
-          "properties": {
-            "trace": {
-              "type": "object",
-              "properties": {
-                "request": {
-                  "$ref": "debug.trace.request.json"
-                },
-                "response": {
-                  "$ref": "debug.trace.response.json"
-                }
-              }
-            },
-            "memoryView": {
-              "type": "object",
-              "properties": {
-                "request": {
-                  "$ref": "debug.memoryView.request.json"
-                },
-                "response": {
-                  "$ref": "debug.memoryView.response.json"
-                }
-              }
-            },
-            "breakpoints": {
-              "type": "object",
-              "properties": {
-                "request": {
-                  "$ref": "debug.breakpoints.request.json"
-                },
-                "response": {
-                  "$ref": "debug.breakpoints.response.json"
                 }
               }
             }

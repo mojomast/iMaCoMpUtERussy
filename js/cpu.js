@@ -36,6 +36,7 @@ export class iMaCoMpUtERussyCPU {
      */
     constructor({ memory } = {}) {
         this.memory = memory || new iMaCoMpUtERussyMemory();
+        this.pendingIRQ = false; // Hardware interrupt pending flag
         this.reset();
     }
 
@@ -48,8 +49,20 @@ export class iMaCoMpUtERussyCPU {
         this.Y = 0;        // Y register (8-bit)
         this.SP = 0xFF;    // Stack Pointer (8-bit, grows downward from 0x01FF)
         this.PC = 0x0600;  // Program Counter (16-bit, starts in USER_RAM)
-        this.P = 0x20;     // Status register (bit 5 always set)
+        this.P = 0x24;     // Status register (bit 5 always set, bit 2 I flag set to disable interrupts initially)
         this.running = true;
+        this.pendingIRQ = false;
+
+        // Initialize interrupt vector table at 0xFF00-0xFFFF
+        // IRQ/BRK vector at 0xFFFE-0xFFFF points to default handler at 0xFF00
+        this.writeByte(0xFFFE, 0x00); // Low byte of IRQ vector
+        this.writeByte(0xFFFF, 0xFF); // High byte of IRQ vector
+        // NMI vector at 0xFFFA-0xFFFB (not implemented)
+        this.writeByte(0xFFFA, 0x00);
+        this.writeByte(0xFFFB, 0xFF);
+        // Reset vector at 0xFFFC-0xFFFD points to 0x0600
+        this.writeByte(0xFFFC, 0x00);
+        this.writeByte(0xFFFD, 0x06);
     }
 
     /**
@@ -85,6 +98,51 @@ export class iMaCoMpUtERussyCPU {
         };
         const bit = flagMap[flagName.toUpperCase()];
         return bit !== undefined ? !!(this.P & (1 << bit)) : false;
+    }
+
+    /**
+     * Set pending IRQ flag (for external hardware simulation)
+     * @param {boolean} pending - Whether IRQ is pending
+     */
+    setPendingIRQ(pending) {
+        this.pendingIRQ = !!pending;
+    }
+
+    /**
+     * Handle interrupt (common logic for IRQ and BRK)
+     * @param {boolean} isBRK - True if BRK instruction, false if IRQ
+     * @returns {number} Cycles used
+     */
+    handleInterrupt(isBRK = false) {
+        if (this.getFlag('I')) {
+            // Interrupts disabled, ignore
+            return 0;
+        }
+
+        const cycles = isBRK ? 7 : 7; // Standard 6502 cycles
+
+        // Push PC (high byte first)
+        this.push((this.PC >> 8) & 0xFF);
+        this.push(this.PC & 0xFF);
+
+        // Push P register (with B flag set for BRK)
+        let status = this.P;
+        if (isBRK) {
+            status |= (1 << FLAGS.BREAK); // Set B flag for BRK
+        }
+        status |= (1 << FLAGS.UNUSED); // Always set bit 5
+        this.push(status);
+
+        // Set I flag to disable further interrupts
+        this.setFlag('I', true);
+
+        // Load PC from IRQ vector 0xFFFE-0xFFFF
+        const low = this.readByte(0xFFFE);
+        const high = this.readByte(0xFFFF);
+        this.PC = (high << 8) | low;
+
+        console.log(`Interrupt handled: ${isBRK ? 'BRK' : 'IRQ'} at PC=0x${this.PC.toString(16).toUpperCase()}`);
+        return cycles;
     }
 
     /**
@@ -221,6 +279,26 @@ export class iMaCoMpUtERussyCPU {
         let cycles = 1; // Base cycles, not accurate
 
         switch (opcode) {
+            // BRK - Break (software interrupt)
+            case 0x00: {
+                cycles = this.handleInterrupt(true); // BRK interrupt
+                break;
+            }
+
+            // RTI - Return from Interrupt
+            case 0x40: {
+                // Pull P register
+                this.P = this.pop();
+                // Ensure bit 5 is set
+                this.P |= (1 << FLAGS.UNUSED);
+                // Pull PC (low byte first)
+                const low = this.pop();
+                const high = this.pop();
+                this.PC = (high << 8) | low;
+                cycles = 6; // Standard RTI cycles
+                console.log(`RTI returned to PC=0x${this.PC.toString(16).toUpperCase()}`);
+                break;
+            }
             // LDA - Load Accumulator
             case 0xA9: { // LDA immediate
                 this.A = this.addrImmediate();
@@ -659,26 +737,156 @@ export class iMaCoMpUtERussyCPU {
      * @returns {number} Cycles used
      */
     step() {
-        return this.executeInstruction();
+        if (!this.running) return 0;
+
+        // Check for pending interrupt before executing instruction
+        if (this.pendingIRQ && !this.getFlag('I')) {
+            const irqCycles = this.handleInterrupt(false);
+            if (irqCycles > 0) {
+                this.pendingIRQ = false; // Clear pending flag after handling
+                return irqCycles;
+            }
+        }
+
+        const cycles = this.executeInstruction();
+
+        // Update video display if executing in video ROM range 0x8000-0x9FFF
+        if (this.PC >= 0x8000 && this.PC <= 0x9FFF && window?.videoManager?.videoUpdate) {
+            try {
+                window.videoManager.videoUpdate();
+            } catch (error) {
+                console.warn('Video update during CPU step failed:', error);
+            }
+        }
+
+        return cycles;
     }
 
     /**
-     * Run multiple instructions
+     * Load program via MCP - enhanced version that supports MCP events
+     * @param {Uint8Array} bytes - Program bytes to load
+     * @param {number} origin - Memory origin address
+     * @param {Object} options - Additional options
+     * @param {boolean} options.viaMCP - Whether loaded via MCP
+     * @param {string} options.source - Original assembly source (for logging)
+     */
+    loadProgramMCP(bytes, origin, options = {}) {
+        const { viaMCP = false, source = null } = options;
+        
+        // Call standard loadProgram
+        this.memory.loadProgram(bytes, origin);
+        
+        // Set PC to origin
+        this.PC = origin;
+        
+        // Log MCP event if applicable
+        if (viaMCP && window.logToMCP) {
+            window.logToMCP('info', `MCP Program Load: ${bytes.length} bytes at 0x${origin.toString(16).toUpperCase()}`, {
+                origin,
+                bytesLoaded: bytes.length,
+                sourceLength: source ? source.length : 0,
+                viaMCP: true
+            });
+        }
+        
+        // Trigger memory refresh if available
+        if (typeof window.refreshMemoryDisplay === 'function') {
+            window.refreshMemoryDisplay();
+        }
+        
+        console.log(`CPU: Loaded ${bytes.length} bytes at 0x${origin.toString(16).toUpperCase()} ${viaMCP ? '(via MCP)' : ''}`);
+        
+        return { success: true, bytesLoaded: bytes.length, origin };
+    }
+
+    /**
+     * Run program with MCP integration
+     * @param {number} maxSteps - Maximum steps to execute
+     * @param {Object} options - Additional options
+     * @param {boolean} options.viaMCP - Whether triggered via MCP
+     */
+    runProgramMCP(maxSteps = 1000, options = {}) {
+        const { viaMCP = false } = options;
+        
+        const stepsExecuted = this.run(maxSteps, true);
+        
+        // Log MCP event if applicable
+        if (viaMCP && window.logToMCP) {
+            window.logToMCP('info', `MCP Program Run: Executed ${stepsExecuted} steps`, {
+                stepsExecuted,
+                startPC: this.PC - stepsExecuted,
+                currentPC: this.PC,
+                viaMCP: true
+            });
+        }
+        
+        // Refresh displays
+        if (typeof window.refreshDisplay === 'function') {
+            window.refreshDisplay();
+        }
+        if (typeof window.refreshMemoryDisplay === 'function') {
+            window.refreshMemoryDisplay();
+        }
+        
+        console.log(`CPU: Executed ${stepsExecuted} steps ${viaMCP ? '(via MCP)' : ''}`);
+        
+        return { success: true, stepsExecuted, finalPC: this.PC };
+    }
+
+    /**
+     * Run multiple instructions asynchronously to prevent blocking
      * @param {number} stepsOrTimeout - Maximum steps to execute, or 0 for unlimited
      * @param {boolean} autoCleanup - Whether to automatically cleanup after execution
-     * @returns {number} Steps executed
+     * @returns {Promise<number>} Steps executed
      */
-    run(stepsOrTimeout = 0, autoCleanup = false) {
+    async run(stepsOrTimeout = 0, autoCleanup = false) {
         let steps = 0;
         const maxSteps = stepsOrTimeout > 0 ? stepsOrTimeout : Infinity;
+        const YIELD_INTERVAL = 100; // Yield every 100 steps to prevent UI blocking
 
-        while (this.running && steps < maxSteps) {
-            this.executeInstruction();
-            steps++;
-        }
+        try {
+            while (this.running && steps < maxSteps) {
+                // Check for pending interrupt in each step
+                if (this.pendingIRQ && !this.getFlag('I')) {
+                    const irqCycles = this.handleInterrupt(false);
+                    if (irqCycles > 0) {
+                        this.pendingIRQ = false;
+                        steps++; // Count interrupt as a step
+                        // Yield after interrupt handling
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                        continue;
+                    }
+                }
 
-        if (autoCleanup) {
-            this.cleanup();
+                // Execute in batches to allow UI updates
+                for (let i = 0; i < YIELD_INTERVAL && this.running && steps < maxSteps; i++) {
+                    try {
+                        const instructionCycles = this.executeInstruction();
+                        steps++;
+                        // Accumulate cycles if tracking, but for simplicity just count instructions
+                    } catch (error) {
+                        console.error('CPU execution error:', error);
+                        if (window.logToMCP) {
+                            window.logToMCP('error', `CPU execution failed at step ${steps}: ${error.message}`);
+                        }
+                        this.running = false;
+                        throw error;
+                    }
+                }
+
+                // Yield to event loop if not finished
+                if (this.running && steps < maxSteps) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
+        } catch (error) {
+            console.error('CPU run error:', error);
+            this.running = false;
+            throw error;
+        } finally {
+            if (autoCleanup) {
+                this.cleanup();
+            }
         }
 
         return steps;
