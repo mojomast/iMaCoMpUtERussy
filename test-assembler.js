@@ -1,3 +1,5 @@
+/* global console */
+/* eslint-env node */
 import { assemble } from './js/assembler.js';
 import fs from 'fs';
 

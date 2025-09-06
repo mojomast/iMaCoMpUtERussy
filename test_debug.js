@@ -1,3 +1,5 @@
+/* global console */
+/* eslint-env node */
 import { iMaCoMpUtERussyCPU } from './js/cpu.js';
 
 const cpu = new iMaCoMpUtERussyCPU();

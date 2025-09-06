@@ -1,3 +1,5 @@
+/* global console */
+/* eslint-env node */
 import { iMaCoMpUtERussyCPU } from './js/cpu.js';
 import { iMaCoMpUtERussyMemory } from './js/memory.js';
 import { assemble } from './js/assembler.js';

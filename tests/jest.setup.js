@@ -1,3 +1,4 @@
+/* global global, jest, console, afterAll, expect, Buffer */
 // Jest setup file for iMaCoMpUtERussy tests
 // Configure global mocks and environment
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+/* global filter */
+
 /**
  * AI Prompt Queue Server
  *

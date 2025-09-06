@@ -9,8 +9,7 @@ content = content.replace(/return throw new MCPError\(([^)]+)\);/g, 'throw new M
 
 // Fix "throw new MCPError" statements that might need adjustment
 // Remove undefined/null messages that got inserted incorrectly
-content = content.replace(/throw new MCPError\(([^,]+), 'undefined'",
-null, (\d+)\);/g, 'throw new MCPError($1, \'unknown\', null, $2);');
+content = content.replace(/throw new MCPError\(([^,]+), 'undefined', null, (\d+)\);/g, 'throw new MCPError($1, \'unknown\', null, $2);');
 
 // Fix incomplete function calls or malformed replacements
 content = content.replace(/throw new MCPError\('VIDEO_OUT_OF_BOUNDS', 'Pixel coordinates out of video bounds', null, 422\);/g, 'throw new MCPError(\'VIDEO_OUT_OF_BOUNDS\', \'Pixel coordinates out of video bounds\', null, 422);');

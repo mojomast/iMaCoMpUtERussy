@@ -727,18 +727,160 @@ export class iMaCoMpUtERussyCPU {
                 return 4;
             },
 
-            // VLD (0x8B) - Video Load: Load graphics block to framebuffer $0200-$05FF
-            // Immediate addressing: block index 0-15 selects predefined pattern
-            // C flag: 0=success, 1=invalid index
+            /**
+             * VLD (0x8B) - Video Load: Load predefined graphics pattern to video buffer $0200-$05FF
+             *
+             * Immediate addressing: blockIndex (0-15) selects from 16 predefined 64-byte patterns:
+             * 0: Checkerboard (alternating 0x00/0x03 bytes)
+             * 1: Horizontal gradient (0x00 to 0x03 across 32 pixels)
+             * 2: Vertical gradient (0x00 to 0x03 down 24 lines)
+             * 3: Diagonal gradient (main diagonal pattern)
+             * 4: Solid black (all 0x00)
+             * 5: Solid bright green (all 0x03)
+             * 6: Horizontal stripes (alternating rows)
+             * 7: Vertical stripes (alternating columns)
+             * 8: Circle shape (simple Bresenham approximation)
+             * 9: Rectangle outline (border pattern)
+             * 10: Filled rectangle (solid block)
+             * 11: Crosshair (center lines)
+             * 12: Text "A" (8x8 bitmap approximation)
+             * 13: Text "B" (8x8 bitmap approximation)
+             * 14: Text "C" (8x8 bitmap approximation)
+             * 15: Random noise (pseudo-random bytes)
+             *
+             * Loads 1024 bytes (32x32 pixels, 1 byte per pixel, 2-bit color) into video buffer.
+             * Sets C flag: 0=success, 1=invalid index (>15).
+             * Triggers MCP 'video.patternLoaded' event if mcpWebSocket available.
+             *
+             * @returns {number} 4 cycles (2 for immediate + 2 for memory write)
+             */
             0x8B: () => {
                 const blockIndex = this.getAddressOrValue('imm');
+                const videoStart = 0x0200;
+                const videoEnd = 0x05FF;
+                const bufferSize = 1024; // 32x32 pixels
+
+                // Predefined 64-byte pattern templates (repeated/expanded to 1024 bytes)
+                const patterns = [
+                    // 0: Checkerboard (8x8 base, repeated)
+                    new Uint8Array(64).map((_, i) => (i % 2 === 0 ? 0x00 : 0x03)),
+                    // 1: Horizontal gradient (0-3 across row)
+                    new Uint8Array(64).map((_, i) => Math.floor((i % 8) / 2)),
+                    // 2: Vertical gradient (0-3 down column)
+                    new Uint8Array(64).map((_, i) => Math.floor(i / 8) % 4),
+                    // 3: Diagonal gradient
+                    new Uint8Array(64).map((_, i) => ((i % 8) + Math.floor(i / 8)) % 4),
+                    // 4: Solid black
+                    new Uint8Array(64).fill(0x00),
+                    // 5: Solid bright green
+                    new Uint8Array(64).fill(0x03),
+                    // 6: Horizontal stripes (even rows 0x00, odd 0x03)
+                    new Uint8Array(64).map((_, i) => (Math.floor(i / 8) % 2 === 0 ? 0x00 : 0x03)),
+                    // 7: Vertical stripes (even columns 0x00, odd 0x03)
+                    new Uint8Array(64).map((_, i) => ((i % 8) % 2 === 0 ? 0x00 : 0x03)),
+                    // 8: Circle (simple 8x8 approximation)
+                    new Uint8Array([
+                        0x00,0x00,0x00,0x03,0x03,0x00,0x00,0x00,
+                        0x00,0x00,0x03,0x03,0x03,0x03,0x00,0x00,
+                        0x00,0x03,0x03,0x03,0x03,0x03,0x03,0x00,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x00,0x03,0x03,0x03,0x03,0x03,0x03,0x00,
+                        0x00,0x00,0x03,0x03,0x03,0x03,0x00,0x00,
+                        0x00,0x00,0x00,0x03,0x03,0x00,0x00,0x00
+                    ]),
+                    // 9: Rectangle outline
+                    new Uint8Array([
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03
+                    ]),
+                    // 10: Filled rectangle
+                    new Uint8Array([
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03
+                    ]),
+                    // 11: Crosshair (center lines)
+                    new Uint8Array(64).map((_, i) => {
+                        const x = i % 8;
+                        const y = Math.floor(i / 8);
+                        return (x === 3 || x === 4 || y === 3 || y === 4) ? 0x03 : 0x00;
+                    }),
+                    // 12: Text "A" (simple 8x8)
+                    new Uint8Array([
+                        0x00,0x03,0x03,0x00,0x00,0x03,0x03,0x00,
+                        0x03,0x00,0x00,0x03,0x03,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+                        0x03,0x00,0x00,0x03,0x03,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x03,0x03,0x00,0x00,0x03,
+                        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+                    ]),
+                    // 13: Text "B"
+                    new Uint8Array([
+                        0x03,0x03,0x03,0x03,0x03,0x00,0x00,0x00,
+                        0x03,0x00,0x00,0x00,0x03,0x03,0x03,0x00,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x03,0x03,0x03,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x03,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x03,0x03,
+                        0x03,0x03,0x03,0x03,0x03,0x00,0x00,0x00
+                    ]),
+                    // 14: Text "C"
+                    new Uint8Array([
+                        0x00,0x03,0x03,0x03,0x03,0x03,0x03,0x00,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                        0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x03,
+                        0x00,0x03,0x03,0x03,0x03,0x03,0x03,0x00
+                    ]),
+                    // 15: Random noise (simple pseudo-random)
+                    new Uint8Array(64).map(() => Math.floor(Math.random() * 4))
+                ];
+
                 if (blockIndex >= 0 && blockIndex <= 15) {
-                    // TODO: Load predefined video pattern to buffer
+                    const pattern = patterns[blockIndex];
+                    let offset = 0;
+                    
+                    // Expand 64-byte pattern to 1024 bytes (repeat 16 times)
+                    for (let i = 0; i < 16; i++) {
+                        for (let j = 0; j < 64; j++) {
+                            if (offset < bufferSize) {
+                                this.writeByte(videoStart + offset, pattern[j]);
+                                offset++;
+                            }
+                        }
+                    }
+                    
+                    // Trigger MCP event if available
+                    if (typeof window !== 'undefined' && window.mcpWebSocket?.readyState === WebSocket.OPEN) {
+                        window.mcpWebSocket.send(JSON.stringify({
+                            type: 'video.patternLoaded',
+                            data: { blockIndex, bufferStart: videoStart, size: bufferSize }
+                        }));
+                    }
+                    
                     this.setFlag('C', false); // Success
                 } else {
-                    this.setFlag('C', true); // Error
+                    this.setFlag('C', true); // Invalid index
                 }
-                return 2;
+                return 4; // Cycles: 2 for immediate + 2 for buffer load
             },
 
             // VST (0x9B) - Video Store: Write A register (2-bit color) to video buffer

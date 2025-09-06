@@ -70,9 +70,12 @@ export class AssemblyPanel {
     editorSection.innerHTML = `
       <div class="editor-controls">
         <label>Origin: <input type="text" id="${this.panelId}-origin" value="0x0600" size="8" /></label>
-        <button id="${this.panelId}-assemble">Assemble</button>
-        <button id="${this.panelId}-load" disabled>Load to Memory</button>
+        <button id="${this.panelId}-assemble">Assemble & Load</button>
+        <button id="${this.panelId}-step" disabled>Step CPU</button>
         <button id="${this.panelId}-run" disabled>Run Program</button>
+        <button id="${this.panelId}-reset" disabled>Reset CPU</button>
+        <button id="${this.panelId}-save-backup">Save Backup</button>
+        <button id="${this.panelId}-restore-backup">Restore Backup</button>
       </div>
       <textarea id="${this.panelId}-editor" 
                 placeholder="Enter assembly code here&#10;Example:&#10;.org 0x0600&#10;LDA #42&#10;STA 0x00&#10;HLT"
@@ -93,8 +96,9 @@ export class AssemblyPanel {
       editor: document.getElementById(`${this.panelId}-editor`),
       origin: document.getElementById(`${this.panelId}-origin`),
       assembleBtn: document.getElementById(`${this.panelId}-assemble`),
-      loadBtn: document.getElementById(`${this.panelId}-load`),
+      stepBtn: document.getElementById(`${this.panelId}-step`),
       runBtn: document.getElementById(`${this.panelId}-run`),
+      resetBtn: document.getElementById(`${this.panelId}-reset`),
       loadSampleBtn: document.getElementById(`${this.panelId}-load-sample`),
       clearBtn: document.getElementById(`${this.panelId}-clear`),
       status: statusSection
@@ -189,12 +193,55 @@ export class AssemblyPanel {
   setupEventListeners() {
     // Assemble button
     this.elements.assembleBtn.addEventListener('click', () => this.handleAssemble());
+    
+    // Backup/restore buttons
+    this.elements.saveBackupBtn = document.getElementById(`${this.panelId}-save-backup`);
+    this.elements.restoreBackupBtn = document.getElementById(`${this.panelId}-restore-backup`);
+    
+    this.elements.saveBackupBtn.addEventListener('click', () => this.handleSaveBackup());
+    this.elements.restoreBackupBtn.addEventListener('click', () => this.handleRestoreBackup());
 
-    // Load button
-    this.elements.loadBtn.addEventListener('click', () => this.handleLoad());
+    // Step button
+    this.elements.stepBtn.addEventListener('click', async () => {
+      try {
+        this.showStatus('Stepping CPU...', 'info');
+        const result = await window.cpuStep(1);
+        if (result.success) {
+          this.showStatus('CPU step completed', 'success');
+          if (window.refreshMemoryDisplay) window.refreshMemoryDisplay();
+          if (window.refreshDisplay) window.refreshDisplay();
+        } else {
+          this.showStatus(`Step failed: ${result.message}`, 'error');
+        }
+      } catch (error) {
+        this.showStatus(`Step error: ${error.message}`, 'error');
+        console.error('CPU step error:', error);
+      }
+    });
 
     // Run button
-    this.elements.runBtn.addEventListener('click', () => this.handleRun());
+    this.elements.runBtn.addEventListener('click', async () => this.handleRun());
+
+    // Reset button
+    this.elements.resetBtn.addEventListener('click', async () => {
+      try {
+        this.showStatus('Resetting CPU...', 'info');
+        const result = await window.cpuReset(true); // Hard reset
+        if (result.success) {
+          this.showStatus('CPU reset completed', 'success');
+          this.elements.stepBtn.disabled = false;
+          this.elements.runBtn.disabled = false;
+          this.elements.resetBtn.disabled = false;
+          if (window.refreshMemoryDisplay) window.refreshMemoryDisplay();
+          if (window.refreshDisplay) window.refreshDisplay();
+        } else {
+          this.showStatus(`Reset failed: ${result.message}`, 'error');
+        }
+      } catch (error) {
+        this.showStatus(`Reset error: ${error.message}`, 'error');
+        console.error('CPU reset error:', error);
+      }
+    });
 
     // Load sample button
     this.elements.loadSampleBtn.addEventListener('click', () => this.loadSampleProgram());
@@ -258,7 +305,7 @@ export class AssemblyPanel {
     const isAuto = options.auto || false;
     
     try {
-      this.showStatus('Assembling...', 'info');
+      this.showStatus('Assembling and loading via MCP...', 'info');
       
       const source = this.elements.editor.value.trim();
       if (!source) {
@@ -272,49 +319,55 @@ export class AssemblyPanel {
         throw new Error('Invalid origin address');
       }
 
-      // Assemble using the assembler module
-      const assembled = assemble(source, { origin: this.originAddress });
+      // Use MCP assemble and load method
+      const result = await window.mcpClient.assembleAndLoad(source, this.originAddress);
       
-      if (!assembled || assembled.length === 0) {
-        throw new Error('Assembly produced no bytes');
+      if (!result.success) {
+        throw new Error(result.error || 'Assembly and load failed');
       }
 
-      this.assembledBytes = assembled;
+      this.assembledBytes = new Uint8Array(result.assembledBytes); // Store for reference
       this.currentProgram = source;
 
-      const byteCount = assembled.length;
-      const statusMsg = `Assembled successfully: ${byteCount} bytes at 0x${this.originAddress.toString(16).toUpperCase()}`;
+      const byteCount = result.assembledBytes;
+      const statusMsg = `Assembled and loaded: ${byteCount} bytes at 0x${this.originAddress.toString(16).toUpperCase()}`;
       
       this.showStatus(statusMsg, 'success');
       
-      // Enable load and run buttons
-      this.elements.loadBtn.disabled = false;
+      // Enable CPU control buttons
+      this.elements.stepBtn.disabled = false;
       this.elements.runBtn.disabled = false;
+      this.elements.resetBtn.disabled = false;
 
       // Log to MCP if available
       if (window.logToMCP && !isAuto) {
-        window.logToMCP('info', `Assembly: ${byteCount} bytes assembled at 0x${this.originAddress.toString(16).toUpperCase()}`, {
+        window.logToMCP('info', `MCP Assembly: ${byteCount} bytes loaded at 0x${this.originAddress.toString(16).toUpperCase()}`, {
           origin: this.originAddress,
           byteCount,
-          preview: Array.from(assembled.slice(0, 8)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')
+          viaMCP: window.mcpClient?.serverAvailable || false
         });
       }
 
+      // Refresh displays
+      if (window.refreshMemoryDisplay) window.refreshMemoryDisplay();
+      if (window.refreshDisplay) window.refreshDisplay();
+
       // If auto-assemble, don't show the full dialog
       if (!isAuto) {
-        this.showAssemblyPreview(assembled);
+        this.showAssemblyPreview(new Uint8Array(result.assembledBytes));
       }
 
     } catch (error) {
-      console.error('Assembly failed:', error);
+      console.error('MCP Assembly failed:', error);
       this.showStatus(`Assembly failed: ${error.message}`, 'error');
       
-      // Disable buttons on error
-      this.elements.loadBtn.disabled = true;
+      // Keep buttons disabled on error
+      this.elements.stepBtn.disabled = true;
       this.elements.runBtn.disabled = true;
+      this.elements.resetBtn.disabled = true;
       
       if (window.logToMCP) {
-        window.logToMCP('error', 'Assembly failed', { error: error.message, source: this.currentProgram.substring(0, 100) });
+        window.logToMCP('error', 'MCP Assembly failed', { error: error.message, source: this.currentProgram.substring(0, 100) });
       }
     }
   }
@@ -322,57 +375,12 @@ export class AssemblyPanel {
   /**
    * Handle load button click - load assembled bytes to memory
    */
+  // Deprecated: handleLoad merged into handleAssemble for MCP integration
   async handleLoad() {
-    if (!this.assembledBytes) {
-      this.showStatus('No assembled program to load', 'error');
-      return;
-    }
-
-    try {
-      this.showStatus('Loading to memory...', 'info');
-
-      // Use MCP client to write to memory if available, otherwise use direct memory access
-      let loadResult;
-      
-      if (this.mcpClient && this.mcpClient.serverAvailable) {
-        // Use MCP memory write (batch writes for efficiency)
-        loadResult = await this.loadViaMCP();
-      } else {
-        // Direct memory load via debugger
-        loadResult = await this.loadDirect();
-      }
-
-      if (loadResult.success) {
-        this.showStatus(`Loaded ${loadResult.bytesLoaded} bytes at 0x${this.originAddress.toString(16).toUpperCase()}`, 'success');
-        
-        // Reset CPU and set PC to origin
-        if (window.cpu) {
-          window.cpu.reset();
-          window.cpu.PC = this.originAddress;
-          if (typeof refreshDisplay === 'function') {
-            refreshDisplay();
-          }
-        }
-
-        // Log to MCP
-        if (window.logToMCP) {
-          window.logToMCP('info', 'Assembly loaded to memory', {
-            address: this.originAddress,
-            bytes: loadResult.bytesLoaded,
-            viaMCP: this.mcpClient?.serverAvailable || false
-          });
-        }
-      } else {
-        throw new Error(loadResult.error || 'Load failed');
-      }
-
-    } catch (error) {
-      console.error('Load failed:', error);
-      this.showStatus(`Load failed: ${error.message}`, 'error');
-      
-      if (window.logToMCP) {
-        window.logToMCP('error', 'Assembly load failed', { error: error.message });
-      }
+    this.showStatus('Load functionality integrated into Assemble button', 'info');
+    // Optionally trigger assemble again or show guidance
+    if (this.currentProgram && this.assembledBytes) {
+      this.handleAssemble({ auto: true });
     }
   }
 
@@ -420,52 +428,53 @@ export class AssemblyPanel {
    */
   async handleRun() {
     if (!this.assembledBytes) {
-      this.showStatus('No program loaded', 'error');
+      this.showStatus('No program loaded - assemble first', 'error');
       return;
     }
 
     try {
-      this.showStatus('Running program...', 'info');
+      this.showStatus('Running program via MCP...', 'info');
 
-      let runResult;
+      const result = await window.cpuRun();
       
-      if (this.mcpClient && this.mcpClient.serverAvailable) {
-        // Use MCP to run CPU
-        runResult = await this.mcpClient.runCPU();
-      } else {
-        // Direct CPU execution
-        runResult = await this.runDirect();
-      }
-
-      if (runResult.success) {
-        this.showStatus('Program execution started', 'success');
+      if (result.success) {
+        this.showStatus('Program execution started via MCP', 'success');
         
         // Refresh displays
-        if (typeof refreshDisplay === 'function') {
-          refreshDisplay();
-        }
-        if (typeof refreshMemoryDisplay === 'function') {
-          refreshMemoryDisplay();
-        }
+        if (window.refreshMemoryDisplay) window.refreshMemoryDisplay();
+        if (window.refreshDisplay) window.refreshDisplay();
 
         // Log to MCP
         if (window.logToMCP) {
-          window.logToMCP('info', 'Program execution started', {
+          window.logToMCP('info', 'MCP Program execution started', {
             origin: this.originAddress,
             bytes: this.assembledBytes.length,
-            viaMCP: this.mcpClient?.serverAvailable || false
+            viaMCP: window.mcpClient?.serverAvailable || true
           });
         }
+
+        // Optionally get and display CPU state after run
+        setTimeout(async () => {
+          try {
+            const state = await window.getCPUState();
+            if (state.success && window.logToMCP) {
+              window.logToMCP('info', `CPU State after run: PC=0x${state.data.PC?.toString(16)} A=0x${state.data.A?.toString(16)}`);
+            }
+          } catch (e) {
+            console.warn('Could not fetch CPU state after run:', e);
+          }
+        }, 500);
+
       } else {
-        throw new Error(runResult.error || 'Execution failed');
+        throw new Error(result.error || 'Execution failed');
       }
 
     } catch (error) {
-      console.error('Run failed:', error);
+      console.error('MCP Run failed:', error);
       this.showStatus(`Execution failed: ${error.message}`, 'error');
       
       if (window.logToMCP) {
-        window.logToMCP('error', 'Program execution failed', { error: error.message });
+        window.logToMCP('error', 'MCP Program execution failed', { error: error.message });
       }
     }
   }

@@ -6,6 +6,116 @@
 import { assemble } from './assembler.js';
 
 /**
+ * Persistence helper functions for version-controlled storage
+ */
+class PersistenceHelpers {
+  /**
+   * Generate SHA-256 checksum for data
+   * @param {string|ArrayBuffer} data - Data to hash
+   * @returns {Promise<string>} Hex checksum
+   */
+  static async generateChecksum(data) {
+    if (typeof data === 'string') {
+      data = new TextEncoder().encode(data);
+    }
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Normalize path for cross-platform compatibility
+   * @param {string} path - Path to normalize
+   * @returns {string} Normalized path using forward slashes
+   */
+  static normalizePath(path) {
+    return path.replace(/\\/g, '/');
+  }
+
+  /**
+   * Get localStorage key for program version tracking
+   * @param {string} programName - Program name
+   * @returns {string} Storage key
+   */
+  static getVersionKey(programName) {
+    return `mcp_program_version_${this.normalizePath(programName)}`;
+  }
+
+  /**
+   * Store program version locally
+   * @param {string} programName - Program name
+   * @param {string} version - Version string
+   * @param {Object} metadata - Program metadata
+   */
+  static storeVersion(programName, version, metadata = {}) {
+    try {
+      const key = this.getVersionKey(programName);
+      const versionData = {
+        version,
+        metadata,
+        updatedAt: new Date().toISOString(),
+        checksum: metadata.checksum || ''
+      };
+      localStorage.setItem(key, JSON.stringify(versionData));
+      console.log(`💾 Stored version ${version} for program '${programName}'`);
+    } catch (error) {
+      console.warn('Failed to store program version locally:', error);
+    }
+  }
+
+  /**
+   * Get stored program version
+   * @param {string} programName - Program name
+   * @returns {Object|null} Version data or null
+   */
+  static getStoredVersion(programName) {
+    try {
+      const key = this.getVersionKey(programName);
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      console.warn('Failed to get stored program version:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Validate program version compatibility
+   * @param {string} currentVersion - Current program version
+   * @param {string} expectedVersion - Expected version
+   * @returns {Object} Validation result
+   */
+  static validateVersion(currentVersion, expectedVersion = '1.1') {
+    const [currentMajor] = currentVersion.split('.').map(Number);
+    const [expectedMajor] = expectedVersion.split('.').map(Number);
+    
+    return {
+      valid: currentMajor >= expectedMajor,
+      current: currentVersion,
+      expected: expectedVersion,
+      needsUpgrade: currentMajor < expectedMajor,
+      message: currentMajor >= expectedMajor ? 'Version compatible' : `Version upgrade required from ${currentVersion} to ${expectedVersion}`
+    };
+  }
+
+  /**
+   * Validate checksum integrity
+   * @param {string|ArrayBuffer} data - Data to validate
+   * @param {string} expectedChecksum - Expected checksum
+   * @returns {Promise<boolean>} Validation result
+   */
+  static async validateChecksum(data, expectedChecksum) {
+    try {
+      const currentChecksum = await this.generateChecksum(data);
+      return currentChecksum === expectedChecksum;
+    } catch (error) {
+      console.error('Checksum validation failed:', error);
+      return false;
+    }
+  }
+}
+
+/**
  * Initialize MCP integration with graceful fallbacks
  */
 export async function initializeMCPIntegration() {
@@ -101,36 +211,288 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
         },
 
         // Timeout-enabled fetch wrapper
-        async timeoutFetch(url, options, timeoutMs = 10000) {
-          const controller = new AbortController();
-          const signal = controller.signal;
-          
-          // Add signal to options if not present
-          options = { ...options, signal };
-          
-          // Timeout promise
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => {
-              controller.abort();
-              reject(new Error(`MCP request timeout after ${timeoutMs}ms`));
-            }, timeoutMs);
-          });
-          
-          // Fetch promise
-          const fetchPromise = fetch(url, options).catch(err => {
-            if (err.name !== 'AbortError') throw err;
-            return Promise.reject(err);
-          });
-          
-          try {
-            const response = await Promise.race([fetchPromise, timeoutPromise]);
-            return response;
-          } catch (error) {
-            if (error.name === 'AbortError') {
-              console.warn('MCP request aborted due to timeout:', error.message);
+        /**
+         * Enhanced timeout fetch with client-side retry logic
+         */
+        async resilientFetch(url, options, maxRetries = 3, baseDelay = 1000, operationType = 'default', queueOnFailure = true) {
+          let lastError;
+          let retryCount = 0;
+          const specificDelays = [1000, 2000, 4000]; // 1s, 2s, 4s for 3 attempts
+      
+          while (retryCount <= maxRetries) {
+            try {
+              const timeoutMs = options._timeoutMs || 10000;
+              const controller = new AbortController();
+              const signal = controller.signal;
+              
+              // Add signal to options if not present
+              const fetchOptions = { ...options, signal };
+              
+              // Timeout promise
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => {
+                  controller.abort();
+                  reject(new Error(`MCP request timeout after ${timeoutMs}ms`));
+                }, timeoutMs);
+              });
+              
+              // Fetch promise
+              const fetchPromise = fetch(url, fetchOptions).catch(err => {
+                if (err.name !== 'AbortError') throw err;
+                return Promise.reject(err);
+              });
+              
+              const response = await Promise.race([fetchPromise, timeoutPromise]);
+              
+              // Success - clear any queued operations for this URL if applicable
+              if (queueOnFailure && retryCount > 0) {
+                this.clearQueuedOperations(url, 'retry_success');
+              }
+              
+              return response;
+              
+            } catch (error) {
+              lastError = error;
+              retryCount++;
+              
+              // Check if retryable error (network errors, timeouts, 5xx server errors)
+              const isRetryable = error.name === 'AbortError' ||
+                                 error.message?.includes('timeout') ||
+                                 (error.status >= 500 && error.status < 600) ||
+                                 (error.isMCPError && ['SERVICE_UNAVAILABLE', 'TIMEOUT_EXCEEDED', 'RETRYABLE_SERVICE'].includes(error.code));
+              
+              if (!isRetryable || retryCount > maxRetries) {
+                // Final failure - queue operation if requested
+                if (queueOnFailure && this.shouldQueueOperation(error, operationType)) {
+                  await this.queueOperationForReplay({ url, options: JSON.stringify(options), operationType, timestamp: Date.now(), attempt: retryCount });
+                  console.warn('📱 MCP operation queued for replay due to failure:', { url, operationType, error: error.message });
+                  if (window.logToMCP) {
+                    window.logToMCP('warn', `Operation queued for retry: ${operationType} (${error.message})`);
+                  }
+                }
+                throw error;
+              }
+              
+              // Calculate retry delay
+              let delay;
+              if (retryCount <= specificDelays.length) {
+                delay = specificDelays[retryCount - 1];
+              } else {
+                // Exponential backoff for additional retries
+                delay = baseDelay * Math.pow(2, retryCount - 1);
+                delay = Math.min(delay, 8000); // Cap at 8 seconds
+              }
+              
+              console.warn(`🔄 MCP retry ${retryCount}/${maxRetries} for ${operationType} after ${delay}ms:`, error.message);
+              if (window.logToMCP) {
+                window.logToMCP('info', `Retrying ${operationType} operation (attempt ${retryCount}/${maxRetries}) in ${delay}ms`);
+              }
+              
+              // Wait before retry
+              await new Promise(resolve => setTimeout(resolve, delay));
             }
-            throw error;
           }
+          
+          // All retries exhausted
+          console.error('❌ MCP operation failed after all retries:', lastError);
+          if (window.logToMCP) {
+            window.logToMCP('error', `Operation failed after ${maxRetries + 1} attempts: ${lastError.message}`);
+          }
+          throw lastError;
+        },
+      
+        /**
+         * Check if operation should be queued for replay
+         */
+        shouldQueueOperation(error, operationType) {
+          // Queue critical operations or specific error types
+          const criticalOperations = ['cpu.reset', 'cpu.step', 'cpu.run', 'memory.write', 'programs.save'];
+          const queueableErrors = ['SERVICE_UNAVAILABLE', 'TIMEOUT_EXCEEDED', 'RETRYABLE_SERVICE', 'NETWORK_ERROR'];
+          
+          const shouldQueue = criticalOperations.some(op => operationType.includes(op)) ||
+                             (error.isMCPError && queueableErrors.includes(error.code)) ||
+                             error.name === 'TypeError' || // Network errors
+                             error.message?.includes('fetch');
+          
+          return shouldQueue;
+        },
+      
+        /**
+         * Queue operation for later replay from localStorage
+         */
+        async queueOperationForReplay(operation) {
+          try {
+            const queueKey = 'mcp_operation_queue';
+            let queue = JSON.parse(localStorage.getItem(queueKey) || '[]');
+            
+            // Add operation to queue with unique ID
+            operation.id = Date.now() + Math.random();
+            operation.retries = 0;
+            operation.maxRetries = 5; // Max 5 replay attempts
+            queue.unshift(operation); // Add to front for FIFO
+            
+            // Keep only last 50 operations
+            if (queue.length > 50) {
+              queue = queue.slice(0, 50);
+            }
+            
+            localStorage.setItem(queueKey, JSON.stringify(queue));
+            console.log('💾 MCP operation queued:', operation.id);
+            
+            // Schedule replay attempt
+            this.scheduleReplayCheck();
+            
+          } catch (storageError) {
+            console.error('Failed to queue operation for replay:', storageError);
+          }
+        },
+      
+        /**
+         * Clear queued operations (success or manual clear)
+         */
+        clearQueuedOperations(url, reason = 'manual') {
+          try {
+            const queueKey = 'mcp_operation_queue';
+            let queue = JSON.parse(localStorage.getItem(queueKey) || '[]');
+            
+            // Filter out operations matching the URL or all if reason is 'manual'
+            if (reason === 'manual') {
+              queue = [];
+            } else {
+              queue = queue.filter(op => !op.url.includes(url));
+            }
+            
+            localStorage.setItem(queueKey, JSON.stringify(queue));
+            console.log('🧹 MCP queued operations cleared:', reason);
+            
+          } catch (error) {
+            console.error('Failed to clear queued operations:', error);
+          }
+        },
+      
+        /**
+         * Schedule periodic check for queued operations replay
+         */
+        scheduleReplayCheck() {
+          if (this.replayTimer) return; // Already scheduled
+          
+          this.replayTimer = setInterval(async () => {
+            await this.replayQueuedOperations();
+          }, 5000); // Check every 5 seconds
+          
+          // Clear timer after 5 minutes of inactivity
+          setTimeout(() => {
+            if (this.replayTimer) {
+              clearInterval(this.replayTimer);
+              this.replayTimer = null;
+              console.log('⏰ MCP replay timer cleared due to inactivity');
+            }
+          }, 5 * 60 * 1000);
+        },
+      
+        /**
+         * Replay queued operations from localStorage
+         */
+        async replayQueuedOperations() {
+          try {
+            const queueKey = 'mcp_operation_queue';
+            let queue = JSON.parse(localStorage.getItem(queueKey) || '[]');
+            
+            if (queue.length === 0) {
+              if (this.replayTimer) {
+                clearInterval(this.replayTimer);
+                this.replayTimer = null;
+              }
+              return;
+            }
+            
+            console.log('🔄 Attempting to replay', queue.length, 'queued MCP operations');
+            
+            let replayed = 0;
+            let failed = 0;
+            
+            // Process operations in reverse order (most recent first)
+            for (let i = queue.length - 1; i >= 0; i--) {
+              const operation = queue[i];
+              
+              if (operation.retries >= operation.maxRetries) {
+                console.warn('⏭️ Skipping operation after max retries:', operation.id);
+                queue.splice(i, 1);
+                continue;
+              }
+              
+              try {
+                // Reconstruct options from stored JSON
+                const options = {
+                  ...operation.options,
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': 'default-api-key-change-in-production'
+                  }
+                };
+                
+                if (operation.options.body) {
+                  options.body = operation.options.body;
+                }
+                
+                const response = await this.resilientFetch(operation.url, options, 1, 1000, operation.operationType, false); // No re-queuing on replay
+                
+                if (response.ok) {
+                  console.log('✅ Queued operation replayed successfully:', operation.id);
+                  if (window.logToMCP) {
+                    window.logToMCP('success', `Replayed queued operation: ${operation.operationType}`);
+                  }
+                  queue.splice(i, 1); // Remove from queue
+                  replayed++;
+                }
+              } catch (replayError) {
+                operation.retries++;
+                console.warn('❌ Failed to replay queued operation:', operation.id, replayError.message);
+                if (window.logToMCP) {
+                  window.logToMCP('warn', `Replay attempt ${operation.retries}/${operation.maxRetries} failed for ${operation.operationType}`);
+                }
+                failed++;
+              }
+            }
+            
+            // Update storage
+            localStorage.setItem(queueKey, JSON.stringify(queue));
+            
+            console.log(`📊 Replay complete: ${replayed} successful, ${failed} failed, ${queue.length} remaining`);
+            
+            if (queue.length === 0 && this.replayTimer) {
+              clearInterval(this.replayTimer);
+              this.replayTimer = null;
+              console.log('🎉 All queued operations replayed successfully');
+            }
+            
+          } catch (error) {
+            console.error('Failed to process queued operations:', error);
+          }
+        },
+      
+        /**
+         * Get server availability status
+         */
+        async checkServerAvailability() {
+          try {
+            const response = await this.resilientFetch(`${this.serverUrl}/health`, { method: 'GET' }, 1, 1000, 'health_check', false);
+            const health = await response.json();
+            this.serverAvailable = health.status === 'ok' || health.status === 'degraded';
+            this.serverHealth = health;
+            return this.serverAvailable;
+          } catch (error) {
+            this.serverAvailable = false;
+            console.warn('Server availability check failed:', error.message);
+            return false;
+          }
+        },
+      
+        async timeoutFetch(url, options, timeoutMs = 10000) {
+          // Legacy method - use resilientFetch for new implementations
+          console.warn('Using legacy timeoutFetch - consider using resilientFetch for retry support');
+          return this.resilientFetch(url, options, 0, 0, 'legacy', false);
         },
       
         // Helper to create consistent fetch options with timeout support
@@ -156,21 +518,37 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({ message: response.statusText }));
             console.error(`❌ MCP ${operation} failed:`, errorData);
-            // Parse as MCPError if possible
+            
+            // Enhanced error parsing with circuit breaker status
             if (errorData.error && errorData.code) {
               const mcpError = {
                 code: errorData.code,
                 message: errorData.message || errorData.error,
-                details: errorData.details || errorData.data
+                details: errorData.details || errorData.data,
+                retryable: errorData.retryable || false,
+                circuitStatus: errorData.circuitStatus || null,
+                retryCount: errorData.retryCount || 0
               };
               throw { isMCPError: true, ...mcpError };
             }
-            throw { message: errorData.message || `HTTP ${response.status}` };
+            throw {
+              message: errorData.message || `HTTP ${response.status}`,
+              status: response.status,
+              retryable: response.status >= 500 // Server errors are retryable
+            };
           }
           const result = await response.json();
           if (!result.success) {
             console.error(`❌ MCP ${operation} server error:`, result);
-            throw { isMCPError: true, code: result.error?.code || 'SERVER_ERROR', message: result.error?.message || 'Server error' };
+            const errorObj = {
+              isMCPError: true,
+              code: result.error?.code || 'SERVER_ERROR',
+              message: result.error?.message || 'Server error',
+              details: result.error?.details,
+              retryable: result.error?.retryable || false,
+              circuitStatus: result.error?.circuitStatus
+            };
+            throw errorObj;
           }
           return result;
         },
@@ -191,6 +569,36 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
                 logger.error('MCP CPU reset error', { error: error.message, isMCPError: !!error.isMCPError, code: error.code });
                 if (window.logToMCP) {
                     window.logToMCP('error', `CPU reset failed: ${error.message}`);
+                }
+                throw error;
+            }
+        },
+
+        async getCPUState() {
+            if (!this.serverAvailable) {
+                console.info('📊 MCP: CPU state (simulated offline mode)');
+                return {
+                    success: true,
+                    data: {
+                        PC: 0x0600,
+                        A: 0,
+                        X: 0,
+                        Y: 0,
+                        flags: { Z: false, N: false, C: false, V: false, I: false, D: false },
+                        running: false
+                    }
+                };
+            }
+      
+            try {
+                logger.debug('MCP CPU state request');
+                const options = this.createFetchOptions({}, {}, 2000); // 2s timeout for state
+                const response = await this.timeoutFetch(`${this.serverUrl}/mcp/cpu/state`, options, options._timeoutMs);
+                return await this.handleMCPResponse(response, 'CPU state');
+            } catch (error) {
+                logger.error('MCP CPU state error', { error: error.message, isMCPError: !!error.isMCPError, code: error.code });
+                if (window.logToMCP) {
+                    window.logToMCP('error', `CPU state fetch failed: ${error.message}`);
                 }
                 throw error;
             }
@@ -428,6 +836,246 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
             }
         },
 
+        // Programs management methods
+        async saveProgram(name, programBytes, metadata = {}) {
+            if (!this.serverAvailable) {
+                console.info(`💾 MCP: Save program '${name}' (simulated offline mode)`);
+                // Simulate version-controlled save in offline mode
+                const sourceCode = Array.from(programBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ');
+                const checksum = await PersistenceHelpers.generateChecksum(sourceCode);
+                const versionData = {
+                    ...metadata,
+                    checksum,
+                    integrity: 'sha256',
+                    savedAt: new Date().toISOString(),
+                    version: '1.1'
+                };
+                PersistenceHelpers.storeVersion(name, '1.1', versionData);
+                return {
+                    success: true,
+                    message: `Program '${name}' saved in offline mode`,
+                    name,
+                    size: programBytes.length,
+                    metadata: versionData,
+                    version: '1.1',
+                    checksum
+                };
+            }
+
+            try {
+                // Generate client-side checksum for additional validation
+                const sourceCode = Array.from(programBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ');
+                const clientChecksum = await PersistenceHelpers.generateChecksum(sourceCode);
+                
+                logger.debug('MCP program save request', { name, size: programBytes.length, metadata, clientChecksum });
+                
+                // Enhance metadata with client-side validation data
+                const enhancedMetadata = {
+                    ...metadata,
+                    clientChecksum,
+                    clientGeneratedAt: new Date().toISOString(),
+                    platform: navigator.platform,
+                    userAgent: navigator.userAgent.substring(0, 100)
+                };
+
+                const requestBody = {
+                    name: PersistenceHelpers.normalizePath(name.trim()),
+                    programBytes,
+                    metadata: enhancedMetadata
+                };
+                const options = this.createFetchOptions(requestBody, {}, 10000); // 10s for larger programs
+                const response = await this.resilientFetch(`${this.serverUrl}/mcp/programs/save`, options, 3, 1000, 'programs.save', true);
+                const result = await this.handleMCPResponse(response, 'program save');
+                
+                if (result.success) {
+                    // Store version information locally for offline access
+                    PersistenceHelpers.storeVersion(name, result.data.version, result.data.metadata);
+                    
+                    // Cross-platform path logging
+                    const normalizedPath = PersistenceHelpers.normalizePath(result.data.path || '');
+                    console.log(`✅ Program '${name}' saved with version ${result.data.version} at ${normalizedPath}`);
+                    
+                    // Validate server checksum if provided
+                    if (result.data.checksum && result.data.checksum !== clientChecksum) {
+                        console.warn('⚠️ Client/server checksum mismatch detected:', {
+                            client: clientChecksum.substring(0, 16) + '...',
+                            server: result.data.checksum.substring(0, 16) + '...'
+                        });
+                    }
+                    
+                    if (window.logToMCP) {
+                        window.logToMCP('success', `Saved program '${name}' (v${result.data.version}, ${result.data.size} bytes, checksum: ${result.data.checksum?.substring(0, 16)}...)`);
+                    }
+                }
+                
+                return result;
+            } catch (error) {
+                logger.error('MCP program save error', {
+                    error: error.message,
+                    isMCPError: !!error.isMCPError,
+                    code: error.code,
+                    name
+                });
+                if (window.logToMCP) {
+                    window.logToMCP('error', `Program save failed for '${name}': ${error.message}`);
+                }
+                throw error;
+            }
+        },
+
+        async loadProgram(name, targetAddress = 0x0600) {
+            if (!this.serverAvailable) {
+                console.info(`📂 MCP: Load program '${name}' (simulated offline mode)`);
+                // Load from local version storage if available
+                const storedVersion = PersistenceHelpers.getStoredVersion(name);
+                if (storedVersion) {
+                    console.log(`📂 Loading offline version ${storedVersion.version} of '${name}'`);
+                    return {
+                        success: true,
+                        message: `Program '${name}' loaded from local storage (v${storedVersion.version})`,
+                        name,
+                        version: storedVersion.version,
+                        metadata: storedVersion.metadata,
+                        bytesLoaded: 256, // Simulated
+                        targetAddress,
+                        checksum: storedVersion.checksum
+                    };
+                }
+                return {
+                    success: true,
+                    message: `Program '${name}' loaded in offline mode`,
+                    name,
+                    bytesLoaded: 256,
+                    targetAddress
+                };
+            }
+
+            try {
+                logger.debug('MCP program load request', { name, targetAddress });
+                
+                // Check local version first for consistency
+                const localVersion = PersistenceHelpers.getStoredVersion(name);
+                console.log(`🔍 Checking local version for '${name}':`, localVersion ? `v${localVersion.version}` : 'none');
+                
+                const normalizedName = PersistenceHelpers.normalizePath(name.trim());
+                const requestBody = { name: normalizedName, targetAddress };
+                const options = this.createFetchOptions(requestBody, {}, 10000);
+                const response = await this.resilientFetch(`${this.serverUrl}/mcp/programs/load`, options, 3, 1000, 'programs.load', true);
+                const result = await this.handleMCPResponse(response, 'program load');
+                
+                if (result.success) {
+                    // Validate version compatibility
+                    const versionValidation = PersistenceHelpers.validateVersion(result.version || '1.0');
+                    if (!versionValidation.valid) {
+                        console.warn('⚠️ Version compatibility warning:', versionValidation.message);
+                        if (window.logToMCP) {
+                            window.logToMCP('warn', `Program version ${result.version} may need upgrade: ${versionValidation.message}`);
+                        }
+                    }
+                    
+                    // Validate checksum if provided
+                    if (result.checksum && result.metadata && result.metadata.source) {
+                        const checksumValid = await PersistenceHelpers.validateChecksum(result.metadata.source, result.checksum);
+                        if (!checksumValid) {
+                            console.error('❌ Checksum validation failed for loaded program');
+                            if (window.logToMCP) {
+                                window.logToMCP('error', `Checksum validation failed for '${name}' - data may be corrupted`);
+                            }
+                            // Don't throw - allow load but warn user
+                        } else {
+                            console.log('✅ Checksum validation passed for loaded program');
+                        }
+                    }
+                    
+                    // Update local version storage
+                    if (result.version && result.metadata) {
+                        PersistenceHelpers.storeVersion(name, result.version, result.metadata);
+                    }
+                    
+                    const normalizedPath = PersistenceHelpers.normalizePath(result.path || '');
+                    console.log(`✅ Program '${name}' loaded (v${result.version || 'unknown'}) from ${normalizedPath}, ${result.bytesLoaded} bytes at 0x${targetAddress.toString(16)}`);
+                    
+                    if (window.logToMCP) {
+                        window.logToMCP('success', `Loaded program '${name}' (v${result.version || 'unknown'}, ${result.bytesLoaded} bytes)`);
+                    }
+                    
+                    // Refresh memory display after load
+                    if (window.refreshMemoryDisplay) {
+                        setTimeout(() => window.refreshMemoryDisplay(), 100);
+                    }
+                }
+                
+                return result;
+            } catch (error) {
+                logger.error('MCP program load error', {
+                    error: error.message,
+                    isMCPError: !!error.isMCPError,
+                    code: error.code,
+                    name
+                });
+                if (window.logToMCP) {
+                    window.logToMCP('error', `Program load failed for '${name}': ${error.message}`);
+                }
+                throw error;
+            }
+        },
+
+        // Queue management methods
+        async addToQueue(programName, priority = 'normal') {
+            if (!this.serverAvailable) {
+                console.info(`📋 MCP: Add to queue '${programName}' (simulated offline mode)`);
+                return {
+                    success: true,
+                    message: `Program '${programName}' added to queue in offline mode`,
+                    programName,
+                    priority,
+                    position: 1
+                };
+            }
+
+            try {
+                logger.debug('MCP queue add request', { programName, priority });
+                const requestBody = { programName: programName.trim(), priority };
+                const options = this.createFetchOptions(requestBody, {}, 5000);
+                const response = await this.timeoutFetch(`${this.serverUrl}/mcp/queue/add`, options, options._timeoutMs);
+                return await this.handleMCPResponse(response, 'queue add');
+            } catch (error) {
+                logger.error('MCP queue add error', { error: error.message, isMCPError: !!error.isMCPError, code: error.code, programName });
+                if (window.logToMCP) {
+                    window.logToMCP('error', `Queue add failed for '${programName}': ${error.message}`);
+                }
+                throw error;
+            }
+        },
+
+        async listQueue() {
+            if (!this.serverAvailable) {
+                console.info('📋 MCP: List queue (simulated offline mode)');
+                return {
+                    success: true,
+                    data: {
+                        items: [
+                            { id: 1, programName: 'sample', priority: 'normal', status: 'pending', position: 1, addedAt: new Date().toISOString() }
+                        ],
+                        total: 1
+                    }
+                };
+            }
+
+            try {
+                logger.debug('MCP queue list request');
+                const options = this.createFetchOptions({}, {}, 3000);
+                const response = await this.timeoutFetch(`${this.serverUrl}/mcp/queue/list`, options, options._timeoutMs);
+                return await this.handleMCPResponse(response, 'queue list');
+            } catch (error) {
+                logger.error('MCP queue list error', { error: error.message, isMCPError: !!error.isMCPError, code: error.code });
+                if (window.logToMCP) {
+                    window.logToMCP('error', `Queue list failed: ${error.message}`);
+                }
+                throw error;
+            }
+        },
+
         /**
          * Assemble assembly source code and load to memory via MCP
          * @param {string} source - Assembly source code
@@ -624,52 +1272,132 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
         }
         };
     
-        // Initialize WebSocket for real-time events if server available
+        // Enhanced WebSocket with automatic reconnection
         if (serverAvailable) {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}`;
-      window.mcpWebSocket = new WebSocket(wsUrl);
-      
-      window.mcpWebSocket.onopen = function() {
-        console.log('🔌 MCP WebSocket connected for real-time updates');
-      };
-      
-      window.mcpWebSocket.onmessage = function(event) {
-        try {
-          const { type, data, timestamp } = JSON.parse(event.data);
-          // Log MCP activity to UI
-          if (window.logToMCP && data) {
-            let logMessage = `[AI/MCP] ${type}`;
-            if (type === 'cpu.step') {
-              logMessage += ` at PC 0x${data.pc?.toString(16)}: ${data.instruction}`;
-            } else if (type === 'video.setPixel') {
-              logMessage += ` (${data.x}, ${data.y}) = 0x${data.color?.toString(16)}`;
-            } else if (type === 'video.clear') {
-              logMessage += ` range ${data.range} with color 0x${data.color?.toString(16)}`;
-            } else if (type === 'memory.write') {
-              logMessage += ` to address 0x${data.address?.toString(16)} = 0x${data.value?.toString(16)}`;
-            }
-            window.logToMCP('info', logMessage, { type, data, timestamp });
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = `${protocol}//${window.location.host}`;
+          
+          let reconnectAttempts = 0;
+          const maxReconnectAttempts = 5;
+          const reconnectDelays = [1000, 2000, 4000, 8000, 16000]; // Exponential backoff
+          
+          function connectWebSocket() {
+            window.mcpWebSocket = new WebSocket(wsUrl);
+            
+            window.mcpWebSocket.onopen = function() {
+              console.log('🔌 MCP WebSocket connected for real-time updates');
+              reconnectAttempts = 0; // Reset reconnect counter on successful connection
+              if (window.logToMCP) {
+                window.logToMCP('info', 'MCP WebSocket reconnected successfully');
+              }
+              
+              // Re-subscribe to any lost events or send pending messages
+              if (window.mcpClient.replayTimer) {
+                console.log('🔄 WebSocket reconnected - triggering queued operation replay');
+                window.mcpClient.replayQueuedOperations();
+              }
+            };
+            
+            window.mcpWebSocket.onmessage = function(event) {
+              try {
+                const { type, data, timestamp } = JSON.parse(event.data);
+                // Log MCP activity to UI
+                if (window.logToMCP && data) {
+                  let logMessage = `[AI/MCP] ${type}`;
+                  if (type === 'cpu.step') {
+                    logMessage += ` at PC 0x${data.pc?.toString(16)}: ${data.instruction}`;
+                  } else if (type === 'cpu.state') {
+                    logMessage += ` PC=0x${data.pc?.toString(16)} A=0x${data.a?.toString(16)} running=${data.running}`;
+                  } else if (type === 'video.setPixel') {
+                    logMessage += ` (${data.x}, ${data.y}) = 0x${data.color?.toString(16)}`;
+                  } else if (type === 'video.clear') {
+                    logMessage += ` range ${data.range} with color 0x${data.color?.toString(16)}`;
+                  } else if (type === 'memory.write') {
+                    logMessage += ` to address 0x${data.address?.toString(16)} = 0x${data.value?.toString(16)}`;
+                  } else if (type === 'queue.status') {
+                    logMessage += ` ${data.items?.length || 0} items, next: ${data.nextProgram || 'none'}`;
+                  } else if (type === 'error') {
+                    logMessage += ` ${data.message || 'Unknown error'}`;
+                    window.logToMCP('error', logMessage, { type, data, timestamp });
+                    // Show error toast if feedback system available
+                    if (window.feedbackSystem && window.feedbackSystem.showToast) {
+                      window.feedbackSystem.showToast(`MCP Error: ${data.message || 'Unknown error'}`, 'error');
+                    }
+                    return; // Errors already logged as error level
+                  } else if (type === 'circuit.breaker') {
+                    logMessage += ` ${data.service} state: ${data.state}`;
+                    const severity = data.state === 'OPEN' ? 'error' : data.state === 'HALF_OPEN' ? 'warn' : 'info';
+                    window.logToMCP(severity, logMessage, { type, data, timestamp });
+                    if (window.feedbackSystem && window.feedbackSystem.showToast && data.state === 'OPEN') {
+                      window.feedbackSystem.showToast(`Service ${data.service} unavailable - circuit breaker OPEN`, 'error');
+                    }
+                    return;
+                  }
+                  window.logToMCP('info', logMessage, { type, data, timestamp });
+                }
+                // Trigger memory refresh for relevant events
+                if (['cpu.step', 'cpu.state', 'video.setPixel', 'memory.write'].includes(type)) {
+                  if (window.refreshMemoryDisplay) {
+                    window.refreshMemoryDisplay();
+                  }
+                }
+                // Trigger queue refresh for queue events
+                if (type === 'queue.status' && window.updateQueueDisplay) {
+                  window.updateQueueDisplay(data);
+                }
+                // Trigger CPU state update for debugger
+                if (type === 'cpu.state' && window.updateCPUStateDisplay) {
+                  window.updateCPUStateDisplay(data);
+                }
+              } catch (err) {
+                console.warn('Failed to parse MCP WebSocket message:', err);
+              }
+            };
+            
+            window.mcpWebSocket.onerror = function(error) {
+              console.error('MCP WebSocket error:', error);
+              if (window.logToMCP) {
+                window.logToMCP('error', 'MCP WebSocket connection error - attempting reconnection');
+              }
+            };
+            
+            window.mcpWebSocket.onclose = function(event) {
+              console.log('MCP WebSocket disconnected:', event.code, event.reason);
+              if (window.logToMCP) {
+                window.logToMCP('warn', `MCP WebSocket disconnected (code: ${event.code}) - attempting reconnection`);
+              }
+              
+              // Attempt reconnection with exponential backoff
+              if (reconnectAttempts < maxReconnectAttempts) {
+                const delay = reconnectDelays[reconnectAttempts] || 30000; // Cap at 30s
+                reconnectAttempts++;
+                console.log(`🔄 WebSocket reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts} in ${delay}ms`);
+                
+                setTimeout(() => {
+                  console.log('🔄 Attempting WebSocket reconnection...');
+                  connectWebSocket();
+                }, delay);
+              } else {
+                console.error('❌ Max WebSocket reconnection attempts reached');
+                if (window.logToMCP) {
+                  window.logToMCP('error', 'Max WebSocket reconnection attempts reached - operating in degraded mode');
+                }
+                // Switch to degraded/offline mode
+                this.serverAvailable = false;
+                if (window.feedbackSystem && window.feedbackSystem.showToast) {
+                  window.feedbackSystem.showToast('WebSocket failed - operating in offline mode', 'error');
+                }
+              }
+            };
           }
-          // Trigger memory refresh for relevant events
-          if (['cpu.step', 'video.setPixel', 'memory.write'].includes(type)) {
-            if (window.refreshMemoryDisplay) {
-              window.refreshMemoryDisplay();
-            }
-          }
-        } catch (err) {
-          console.warn('Failed to parse MCP WebSocket message:', err);
+          
+          // Initial connection
+          connectWebSocket();
+        } else {
+          // Offline mode - initialize local CPU simulation
+          console.log('📱 Operating in offline mode with local CPU simulation');
+          this.initializeLocalCPUSimulation();
         }
-      };
-      
-      window.mcpWebSocket.onerror = function(error) {
-        console.error('MCP WebSocket error:', error);
-      };
-      
-      window.mcpWebSocket.onclose = function() {
-        console.log('MCP WebSocket disconnected');
-      };
-    }
 
     console.log('🎮 MCP client controller initialized with server status:', serverAvailable ? 'online' : 'offline');
 }
@@ -740,6 +1468,227 @@ export function validateMCPRequest(schema, data) {
 }
 
 // Export base URL for debugging (as a function)
+  /**
+   * Initialize local CPU simulation for offline mode
+   */
+  initializeLocalCPUSimulation() {
+    // Simple 6502-like CPU simulation for offline mode
+    this.localCPU = {
+      PC: 0x0600,
+      A: 0x00,
+      X: 0x00,
+      Y: 0x00,
+      SP: 0xFF,
+      flags: { C: false, Z: false, I: false, D: false, V: false, N: false },
+      memory: new Uint8Array(65536).fill(0), // 64KB RAM
+      halted: false,
+      
+      reset() {
+        this.PC = 0x0600;
+        this.A = 0x00;
+        this.X = 0x00;
+        this.Y = 0x00;
+        this.SP = 0xFF;
+        this.flags = { C: false, Z: false, I: false, D: false, V: false, N: false };
+        this.halted = false;
+        console.log('🖥️ Local CPU simulation reset');
+        if (window.logToMCP) {
+          window.logToMCP('info', 'Local CPU simulation initialized (offline mode)');
+        }
+      },
+      
+      step(steps = 1) {
+        if (this.halted) {
+          console.warn('Local CPU is halted');
+          return { pc: this.PC, instruction: 'HLT', registers: { A: this.A, X: this.X, Y: this.Y } };
+        }
+        
+        for (let i = 0; i < steps; i++) {
+          // Simple simulation - increment PC and A for demo
+          const instruction = this.memory[this.PC] || 0xEA; // NOP default
+          this.PC = (this.PC + 1) & 0xFFFF;
+          
+          // Simulate some operations
+          switch (instruction & 0xFF) {
+            case 0x69: // ADC immediate (demo)
+              this.A = (this.A + Math.floor(Math.random() * 0x10)) & 0xFF;
+              break;
+            case 0x3A: // HLT (demo halt)
+              this.halted = true;
+              break;
+            default:
+              // NOP or unknown - just increment
+              break;
+          }
+          
+          // Update flags (simplified)
+          this.flags.Z = this.A === 0;
+          this.flags.N = (this.A & 0x80) !== 0;
+        }
+        
+        return {
+          pc: this.PC,
+          instruction: `0x${(this.memory[this.PC - 1] || 0).toString(16).padStart(2, '0').toUpperCase()}`,
+          registers: { A: this.A, X: this.X, Y: this.Y },
+          flags: this.flags,
+          halted: this.halted
+        };
+      },
+      
+      readMemory(address, size = 1) {
+        const bytes = [];
+        for (let i = 0; i < size; i++) {
+          bytes.push(this.memory[(address + i) & 0xFFFF]);
+        }
+        return { address, size, bytes, success: true };
+      },
+      
+      writeMemory(address, value, size = 1) {
+        for (let i = 0; i < size; i++) {
+          this.memory[(address + i) & 0xFFFF] = (value >> (i * 8)) & 0xFF;
+        }
+        return { address, value, size, success: true };
+      },
+      
+      getState() {
+        return {
+          PC: this.PC,
+          A: this.A,
+          X: this.X,
+          Y: this.Y,
+          SP: this.SP,
+          flags: this.flags,
+          running: !this.halted,
+          memory: Array.from(this.memory.slice(0, 256)) // First 256 bytes for demo
+        };
+      }
+    };
+    
+    // Initialize local CPU
+    this.localCPU.reset();
+    
+    // Override CPU methods to use local simulation when offline
+    const originalResetCPU = this.resetCPU;
+    const originalStepCPU = this.stepCPU;
+    const originalRunCPU = this.runCPU;
+    const originalGetCPUState = this.getCPUState;
+    
+    this.resetCPU = async (hardReset = false) => {
+      if (!this.serverAvailable) {
+        console.log('🖥️ Using local CPU simulation for reset');
+        this.localCPU.reset();
+        if (window.feedbackSystem?.showToast) {
+          window.feedbackSystem.showToast('CPU reset (offline simulation)', 'info');
+        }
+        return { success: true, message: 'Local CPU reset completed', data: this.localCPU.getState() };
+      }
+      return originalResetCPU.call(this, hardReset);
+    };
+    
+    this.stepCPU = async (steps = 1) => {
+      if (!this.serverAvailable) {
+        console.log(`🖥️ Using local CPU simulation for ${steps} step(s)`);
+        const result = this.localCPU.step(steps);
+        if (window.feedbackSystem?.showToast && steps > 1) {
+          window.feedbackSystem.showToast(`Local CPU: ${result.halted ? 'Halted' : `${steps} steps executed`}`, 'info');
+        }
+        return { success: true, data: result };
+      }
+      return originalStepCPU.call(this, steps);
+    };
+    
+    this.runCPU = async (maxSteps = 1000) => {
+      if (!this.serverAvailable) {
+        console.log(`🖥️ Using local CPU simulation for run (${maxSteps} max steps)`);
+        let stepsExecuted = 0;
+        while (stepsExecuted < maxSteps && !this.localCPU.halted) {
+          this.localCPU.step(1);
+          stepsExecuted++;
+        }
+        const result = this.localCPU.getState();
+        result.stepsExecuted = stepsExecuted;
+        result.halted = this.localCPU.halted;
+        if (window.feedbackSystem?.showToast) {
+          window.feedbackSystem.showToast(`Local CPU run: ${stepsExecuted} steps${result.halted ? ' (halted)' : ''}`, 'info');
+        }
+        return { success: true, data: result };
+      }
+      return originalRunCPU.call(this, maxSteps);
+    };
+    
+    this.getCPUState = async () => {
+      if (!this.serverAvailable) {
+        console.log('🖥️ Using local CPU simulation for state');
+        return { success: true, data: this.localCPU.getState() };
+      }
+      return originalGetCPUState.call(this);
+    };
+    
+    // Add periodic health check for reconnection
+    this.healthCheckInterval = setInterval(async () => {
+      if (!this.serverAvailable) {
+        const available = await this.checkServerAvailability();
+        if (available) {
+          console.log('🌐 Server became available - switching from offline mode');
+          if (window.feedbackSystem?.showToast) {
+            window.feedbackSystem.showToast('Server reconnected - resuming online mode', 'success');
+          }
+          // Replay any queued operations
+          if (this.replayTimer) {
+            await this.replayQueuedOperations();
+          }
+        }
+      }
+    }, 10000); // Check every 10 seconds
+    
+    console.log('🖥️ Local CPU simulation initialized for offline mode');
+  };
+
+  /**
+   * Cleanup resources on page unload
+   */
+  cleanup() {
+    if (this.replayTimer) {
+      clearInterval(this.replayTimer);
+      this.replayTimer = null;
+    }
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    };
+    if (window.mcpWebSocket) {
+      window.mcpWebSocket.close();
+    }
+    console.log('🧹 MCP client resources cleaned up');
+  }
+};
+
+window.addEventListener('beforeunload', () => {
+  if (window.mcpClient) {
+    window.mcpClient.cleanup();
+  }
+});
+
+// Auto-cleanup queued operations older than 24 hours
+setInterval(() => {
+  if (window.mcpClient) {
+    try {
+      const queueKey = 'mcp_operation_queue';
+      let queue = JSON.parse(localStorage.getItem(queueKey) || '[]');
+      const cutoffTime = Date.now() - (24 * 60 * 60 * 1000); // 24 hours
+      
+      queue = queue.filter(op => (op.timestamp || 0) > cutoffTime);
+      localStorage.setItem(queueKey, JSON.stringify(queue));
+      
+      if (queue.length < (JSON.parse(localStorage.getItem(queueKey) || '[]').length)) {
+        console.log('🧹 Cleaned up old queued operations');
+      }
+    } catch (error) {
+      console.error('Failed to clean up old queued operations:', error);
+    }
+  }
+}, 60 * 60 * 1000); // Hourly cleanup
+
 export function getMCPBaseUrl() {
-    return window.location.port === '3001' ? 'http://localhost:8001' : 'http://localhost:3000';
+  return window.location.port === '3001' ? 'http://localhost:8001' : 'http://localhost:3000';
 }

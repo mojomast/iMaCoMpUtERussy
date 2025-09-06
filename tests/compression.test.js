@@ -1,3 +1,5 @@
+/* global console, process, window */
+/* eslint-env node, browser */
 /**
  * Compression Tests for VideoStorage-8
  * Tests LZ77 compression/decompression and SteganographyEngine integration

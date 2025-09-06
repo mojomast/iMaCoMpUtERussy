@@ -1,3 +1,5 @@
+/* global console */
+/* eslint-env node */
 /**
  * iMaCoMpUtERussy CPU Instruction Tests
  * Kyle Durepos - iMaCoMpUtERussy Project

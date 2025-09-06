@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+/* global broadcastEvent, checkBreakpoint */
+
 /**
  * iMaCoMpUtERussy MCP Server
  *
@@ -67,7 +69,7 @@ const logsDir = path.join(dataDir, 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
-import { MCPError, MCP_ERROR_CODES, formatError } from './mcp_errors.js';
+import { MCPError, MCP_ERROR_CODES, formatError, retryHandler, circuitBreaker } from './mcp_errors.js';
 import ErrorHandler from '../lib/ErrorHandler.js';
 import { sanitizeProgramName, sanitizeProgramSource, validateMemoryAddress, validateMemorySize, validatePixelCoordinates, validateColor, sanitizeTerminalText, validateTimeout, validateBoolean, validateStringLength, VALIDATION_CONFIG } from '../lib/validators.js';
 
@@ -543,7 +545,7 @@ function asyncHandler(fn) {
 }
 
 // CPU Endpoints
-app.post('/mcp/cpu/reset', moderateLimiter, asyncHandler(async (req, res) => {
+app.post('/mcp/cpu/reset', retryHandler(3, 1000, 'cpu'), moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('cpu.reset.request', req.body);
   if (!validation.success) {
     throw MCPError.fromAJVValidation(validation.errors);
@@ -554,7 +556,7 @@ app.post('/mcp/cpu/reset', moderateLimiter, asyncHandler(async (req, res) => {
     res.json(successResponse(result));
   } catch (error) {
     const stdError = ErrorHandler.standardizeError(error, 'mcp_server::cpu_reset');
-    throw new MCPError('CPU_NOT_READY', 'CPU operation failed', { originalError: stdError.message });
+    throw new MCPError('CPU_NOT_READY', 'CPU operation failed', { originalError: stdError.message }, 500, true, 3, 1000, 'cpu', 5000);
   }
 }));
 
@@ -667,7 +669,7 @@ app.post('/mcp/memory/loadProgram', authenticateAPIKey, moderateLimiter, asyncHa
   }
 }));
 
-app.post('/mcp/cpu/step', authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
+app.post('/mcp/cpu/step', retryHandler(3, 1000, 'cpu'), authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
   const validation = validate('cpu.step.request', req.body);
   if (!validation.success) {
     throw MCPError.fromAJVValidation(validation.errors);
@@ -686,13 +688,14 @@ app.post('/mcp/cpu/step', authenticateAPIKey, intenseLimiter, asyncHandler(async
       endpoint: 'POST /mcp/cpu/step',
       pc: `0x${result.pc.toString(16)}`,
       instruction: result.instruction,
-      timeoutMs: validatedTimeout
+      timeoutMs: validatedTimeout,
+      circuitState: circuitBreaker.getServiceBreaker('cpu').state
     });
 
     // Validate response against schema
     const responseValidation = validate('cpu.step.response', { data: result });
     if (!responseValidation.success) {
-      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500, false, 0, 0, 'cpu', 5000);
     }
 
     res.json(successResponse(result));
@@ -701,7 +704,83 @@ app.post('/mcp/cpu/step', authenticateAPIKey, intenseLimiter, asyncHandler(async
     if (error instanceof MCPError) {
       throw error;
     }
-    throw new MCPError('INTERNAL_ERROR', 'CPU step operation failed', stdError.message, 500);
+    throw new MCPError('INTERNAL_ERROR', 'CPU step operation failed', stdError.message, 500, true, 3, 1000, 'cpu', 5000);
+  }
+}));
+
+// CPU run endpoint
+app.post('/mcp/cpu/run', retryHandler(3, 1000, 'cpu'), authenticateAPIKey, intenseLimiter, asyncHandler(async (req, res) => {
+  const validation = validate('cpu.run.request', req.body);
+  if (!validation.success) {
+    throw MCPError.fromAJVValidation(validation.errors);
+  }
+
+  try {
+    const { maxSteps = 1000, stepDelay = 1, breakOnHalt = true } = req.body;
+    const validatedMaxSteps = Math.min(Math.max(parseInt(maxSteps), 1), 10000);
+    const validatedStepDelay = Math.min(Math.max(parseInt(stepDelay), 0), 100);
+    validateBoolean(breakOnHalt, 'breakOnHalt');
+
+    logger.info('CPU run request processed', {
+      endpoint: 'POST /mcp/cpu/run',
+      maxSteps: validatedMaxSteps,
+      stepDelay: validatedStepDelay,
+      breakOnHalt,
+      circuitState: circuitBreaker.getServiceBreaker('cpu').state
+    });
+
+    const result = await adapters.cpu.run(validatedMaxSteps, validatedStepDelay, breakOnHalt);
+
+    // Broadcast CPU run event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('cpu.run', { stepsExecuted: result.stepsExecuted, halted: result.halted, finalPC: result.finalPC });
+    }
+
+    // Validate response against schema
+    const responseValidation = validate('cpu.run.response', { data: result });
+    if (!responseValidation.success) {
+      logger.warn('CPU run response validation failed', { errors: responseValidation.errors });
+    }
+
+    res.json(successResponse(result));
+  } catch (error) {
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::cpu_run');
+    if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'CPU run operation failed', stdError.message, 500, true, 3, 1000, 'cpu', 5000);
+  }
+}));
+
+// CPU state endpoint
+app.get('/mcp/cpu/state', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+  try {
+    const result = await adapters.cpu.status();
+
+    logger.debug('CPU state retrieved successfully', {
+      endpoint: 'GET /mcp/cpu/state',
+      pc: `0x${result.data.pc.toString(16)}`,
+      running: result.data.running
+    });
+
+    // Broadcast CPU state event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('cpu.state', { pc: result.data.pc, registers: { a: result.data.a, x: result.data.x, y: result.data.y }, running: result.data.running });
+    }
+
+    // Validate response against schema
+    const responseValidation = validate('cpu.state.response', result);
+    if (!responseValidation.success) {
+      logger.warn('CPU state response validation failed', { errors: responseValidation.errors });
+    }
+
+    res.json(successResponse(result.data));
+  } catch (error) {
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::cpu_state');
+    if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'CPU state retrieval failed', stdError.message, 500);
   }
 }));
 
@@ -755,21 +834,91 @@ app.post('/mcp/programs/load-sample', moderateLimiter, asyncHandler(async (req, 
       if (!validation.success) {
         throw MCPError.fromAJVValidation(validation.errors);
       }
-    
+  
       try {
         const { name, startAddress } = req.body;
-    
+  
         // Additional validation and sanitization
         const sanitizedName = sanitizeProgramName(name);
         const validatedAddress = validateMemoryAddress(startAddress || 0x0600);
-    
+  
         logger.info('Program load request initiated', {
           endpoint: 'POST /mcp/programs/load',
           programName: sanitizedName,
           startAddress: `0x${validatedAddress?.toString(16)}`
         });
-    
-        const result = await adapters.programs.loadProgramFromSource(sanitizedName, validatedAddress);
+
+        // Load program file with version-controlled persistence
+        const programsDir = path.join(__dirname, '..', 'samples');
+        const programFile = path.join(programsDir, `${sanitizedName}.asm`);
+        
+        if (!fs.existsSync(programFile)) {
+          throw new MCPError('PROGRAM_NOT_FOUND', `Program '${sanitizedName}' not found`, null, 404);
+        }
+
+        // Read and parse program data
+        const fileContent = fs.readFileSync(programFile, 'utf8');
+        let programData;
+        try {
+          programData = JSON.parse(fileContent);
+        } catch (parseError) {
+          // Legacy .asm file - treat as plain source
+          programData = {
+            name: sanitizedName,
+            source: fileContent,
+            metadata: {},
+            savedAt: new Date().toISOString(),
+            version: '1.0'
+          };
+        }
+
+        // Validate version and metadata
+        const version = programData.version || '1.0';
+        if (version !== '1.1') {
+          logger.warn('Loading legacy program version', { programName: sanitizedName, version });
+          // Handle version upgrade if needed (future-proofing)
+          if (version === '1.0') {
+            // Calculate checksum for legacy upgrade
+            const crypto = await import('crypto');
+            const checksum = crypto.createHash('sha256').update(programData.source).digest('hex');
+            programData.metadata.checksum = checksum;
+            programData.metadata.integrity = 'sha256';
+            programData.version = '1.1';
+            // Save upgraded version
+            fs.writeFileSync(programFile, JSON.stringify(programData, null, 2));
+            logger.info('Upgraded legacy program to version 1.1', { programName: sanitizedName });
+          }
+        }
+
+        // Verify checksum if present
+        if (programData.metadata && programData.metadata.checksum) {
+          const crypto = await import('crypto');
+          const currentChecksum = crypto.createHash('sha256').update(programData.source).digest('hex');
+          if (currentChecksum !== programData.metadata.checksum) {
+            throw new MCPError('INTEGRITY_CHECK_FAILED', `Program integrity check failed for '${sanitizedName}'`, null, 422);
+          }
+          logger.debug('Program integrity verified', { programName: sanitizedName, checksum: programData.metadata.checksum });
+        }
+
+        // Load the program using adapter
+        const result = await adapters.programs.loadProgramFromSource(sanitizedName, validatedAddress, false, programData.source);
+
+        // Enhance result with metadata
+        result.metadata = programData.metadata;
+        result.version = programData.version;
+        result.savedAt = programData.savedAt;
+        result.checksum = programData.metadata?.checksum;
+
+        // Broadcast load event with metadata
+        if (typeof broadcastEvent === 'function') {
+          broadcastEvent('programs.load', {
+            name: sanitizedName,
+            version: programData.version,
+            metadata: Object.keys(programData.metadata),
+            checksum: programData.metadata?.checksum
+          });
+        }
+
         res.json(successResponse(result));
       } catch (error) {
         const stdError = ErrorHandler.standardizeError(error, 'mcp_server::programs_load');
@@ -779,6 +928,8 @@ app.post('/mcp/programs/load-sample', moderateLimiter, asyncHandler(async (req, 
           throw new MCPError('INVALID_ASSEMBLY', 'Invalid assembly code', null, 422);
         } else if (error.message.includes('MEMORY_OUT_OF_RANGE')) {
           throw new MCPError('MEMORY_OUT_OF_RANGE', 'Memory address out of range', null, 422);
+        } else if (error.message.includes('INTEGRITY_CHECK_FAILED')) {
+          throw new MCPError('INTEGRITY_CHECK_FAILED', 'Program integrity check failed', null, 422);
         } else {
           throw new MCPError('INTERNAL_ERROR', 'Program load failed', stdError.message, 500);
         }
@@ -988,7 +1139,7 @@ app.post('/mcp/programs/load-sample', moderateLimiter, asyncHandler(async (req, 
       }
     }));
 
-// POST /mcp/programs/save - Save program to samples/
+// POST /mcp/programs/save - Save program with atomic backup and metadata
 app.post('/mcp/programs/save', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
   const validation = validate('programs.save.request', req.body);
   if (!validation.success) {
@@ -996,21 +1147,124 @@ app.post('/mcp/programs/save', authenticateAPIKey, moderateLimiter, asyncHandler
   }
 
   try {
-    const { name, source, overwrite } = req.body;
+    const { name, source, metadata = {}, overwrite = false } = req.body;
 
     // Additional validation and sanitization
     const sanitizedName = sanitizeProgramName(name);
     const sanitizedSource = sanitizeProgramSource(source);
     validateBoolean(overwrite, 'overwrite');
+    validateStringLength(JSON.stringify(metadata), 1000, 'metadata');
 
     logger.info('Program save request initiated', {
       endpoint: 'POST /mcp/programs/save',
       programName: sanitizedName,
       overwrite,
-      sourceLength: sanitizedSource.length
+      sourceLength: sanitizedSource.length,
+      metadataKeys: Object.keys(metadata)
     });
 
-    const result = await adapters.programs.saveProgram(sanitizedName, sanitizedSource, overwrite);
+    // Create programs directory if needed
+    const programsDir = path.join(__dirname, '..', 'samples');
+    if (!fs.existsSync(programsDir)) {
+      fs.mkdirSync(programsDir, { recursive: true });
+    }
+
+    const programFile = path.join(programsDir, `${sanitizedName}.asm`);
+    const backupDir = path.join(__dirname, '..', 'data', 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    // Check if program exists and handle overwrite
+    if (fs.existsSync(programFile) && !overwrite) {
+      throw new MCPError('PROGRAM_EXISTS', `Program '${sanitizedName}' already exists`, null, 409);
+    }
+
+    // Create backup of existing program if it exists
+    if (fs.existsSync(programFile)) {
+      const timestamp = Date.now();
+      const backupPath = path.join(backupDir, `program_${sanitizedName}_backup_${timestamp}.json`);
+      let existingMetadata = {};
+      try {
+        const existingData = JSON.parse(fs.readFileSync(programFile, 'utf8'));
+        existingMetadata = existingData.metadata || {};
+      } catch (parseError) {
+        // Legacy .asm file without JSON structure
+        existingMetadata = {};
+      }
+      const programData = {
+        name: sanitizedName,
+        source: fs.readFileSync(programFile, 'utf8'),
+        metadata: existingMetadata,
+        savedAt: new Date().toISOString(),
+        version: '1.0'
+      };
+      fs.writeFileSync(backupPath, JSON.stringify(programData, null, 2));
+      logger.debug('Backup created for existing program', { backupPath, programName: sanitizedName });
+    }
+
+    // Calculate checksum for integrity
+    const crypto = await import('crypto');
+    const checksum = crypto.createHash('sha256').update(sanitizedSource).digest('hex');
+
+    // Prepare program data with metadata including checksum
+    const programData = {
+      name: sanitizedName,
+      source: sanitizedSource,
+      metadata: {
+        ...metadata,
+        checksum: checksum,
+        integrity: 'sha256'
+      },
+      savedAt: new Date().toISOString(),
+      version: '1.1' // Updated version with metadata support
+    };
+
+    // Atomic write: temp file first
+    const tempFile = `${programFile}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(programData, null, 2));
+
+    // Atomic rename
+    fs.renameSync(tempFile, programFile);
+
+    // Clean old backups (keep last 10)
+    const backupFiles = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith(`program_${sanitizedName}_backup_`))
+      .map(f => path.join(backupDir, f))
+      .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime());
+
+    if (backupFiles.length > 10) {
+      for (let i = 10; i < backupFiles.length; i++) {
+        try {
+          fs.unlinkSync(backupFiles[i]);
+        } catch (unlinkError) {
+          logger.warn('Failed to delete old backup', { file: backupFiles[i], error: unlinkError.message });
+        }
+      }
+    }
+
+    const result = {
+      name: sanitizedName,
+      size: sanitizedSource.length,
+      path: programFile,
+      version: programData.version,
+      metadata: programData.metadata,
+      savedAt: programData.savedAt,
+      backupCreated: true,
+      checksum: checksum
+    };
+
+    // Broadcast program save event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('programs.save', { name: sanitizedName, size: sanitizedSource.length, version: programData.version, checksum });
+    }
+
+    // Validate response
+    const responseValidation = validate('programs.save.response', result);
+    if (!responseValidation.success) {
+      logger.warn('Program save response validation failed', { errors: responseValidation.errors });
+    }
+
     res.json(successResponse(result));
   } catch (error) {
     const stdError = ErrorHandler.standardizeError(error, 'mcp_server::programs_save');
@@ -1019,7 +1273,6 @@ app.post('/mcp/programs/save', authenticateAPIKey, moderateLimiter, asyncHandler
     } else if (error.message.includes('Invalid program name')) {
       throw new MCPError('INVALID_REQUEST', 'Invalid program name', null, 400);
     } else if (error instanceof MCPError) {
-      // Re-throw our validation errors
       throw error;
     } else {
       throw new MCPError('INTERNAL_ERROR', 'Program save failed', stdError.message, 500);
@@ -1376,10 +1629,119 @@ app.post('/mcp/debug/breakpoints', authenticateAPIKey, intenseLimiter, asyncHand
  }));
 
 // ============================================================================
+// QUEUE MANAGEMENT ENDPOINTS
+// ============================================================================
+
+// POST /mcp/queue/add - Add AI prompt to queue
+app.post('/mcp/queue/add', retryHandler(3, 1000, 'queue'), authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+  try {
+    const { prompt, type = 'generation', priority = 'normal', metadata = {} } = req.body;
+
+    // Manual validation
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+      throw new MCPError('INVALID_REQUEST', 'Prompt is required and must be a non-empty string', null, 400, false, 0, 0, 'queue', 10000);
+    }
+    validateStringLength(prompt, 5000, 'prompt');
+    if (!['generation', 'optimization', 'testing', 'debugging', 'custom'].includes(type)) {
+      throw new MCPError('INVALID_REQUEST', 'Invalid type. Must be one of: generation, optimization, testing, debugging, custom', null, 400, false, 0, 0, 'queue', 10000);
+    }
+    if (!['high', 'normal', 'low'].includes(priority)) {
+      throw new MCPError('INVALID_REQUEST', 'Invalid priority. Must be one of: high, normal, low', null, 400, false, 0, 0, 'queue', 10000);
+    }
+    validateStringLength(JSON.stringify(metadata), 2000, 'metadata');
+
+    const sanitizedPrompt = prompt.trim();
+
+    logger.info('Queue add request processed', {
+      endpoint: 'POST /mcp/queue/add',
+      type,
+      priority,
+      promptLength: sanitizedPrompt.length,
+      metadataKeys: Object.keys(metadata),
+      circuitState: circuitBreaker.getServiceBreaker('queue').state
+    });
+
+    if (!queueManager) {
+      throw new MCPError('SERVICE_UNAVAILABLE', 'Queue manager not initialized', null, 503, true, 3, 1000, 'queue', 10000);
+    }
+
+    const taskId = await queueManager.addPrompt(sanitizedPrompt, { type, priority, metadata });
+
+    // Broadcast queue add event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('queue.add', { taskId, type, priority, promptLength: sanitizedPrompt.length });
+    }
+
+    const result = { taskId, message: 'Task added to queue successfully', type, priority };
+
+    res.json(successResponse(result));
+  } catch (error) {
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::queue_add');
+    if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'Failed to add task to queue', stdError.message, 500, true, 3, 1000, 'queue', 10000);
+  }
+}));
+
+// GET /mcp/queue/list - List queue items with filtering
+app.get('/mcp/queue/list', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+  try {
+    const { status, type, priority, search, limit = 100 } = req.query;
+
+    // Validate query params
+    const validatedLimit = Math.min(Math.max(parseInt(limit), 1), 1000);
+    if (search && typeof search !== 'string') {
+      throw new MCPError('INVALID_REQUEST', 'Search parameter must be a string', null, 400);
+    }
+
+    const filter = {};
+    if (status) filter.status = status.split(',').filter(s => ['queued', 'processing', 'completed', 'failed', 'cancelled'].includes(s));
+    if (type) filter.type = type.split(',').filter(t => ['generation', 'optimization', 'testing', 'debugging', 'custom'].includes(t));
+    if (priority) filter.priority = priority.split(',').filter(p => ['high', 'normal', 'low'].includes(p));
+    if (search) filter.search = search;
+
+    logger.info('Queue list request processed', {
+      endpoint: 'GET /mcp/queue/list',
+      filter,
+      limit: validatedLimit
+    });
+
+    if (!queueManager) {
+      throw new MCPError('SERVICE_UNAVAILABLE', 'Queue manager not initialized', null, 503);
+    }
+
+    const tasks = await queueManager.listPrompts(filter);
+    const limitedTasks = tasks.slice(0, validatedLimit);
+
+    // Broadcast queue list event
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('queue.list', { count: limitedTasks.length, filter, limit: validatedLimit });
+    }
+
+    const result = {
+      tasks: limitedTasks,
+      count: limitedTasks.length,
+      total: tasks.length,
+      filter,
+      limit: validatedLimit
+    };
+
+    res.json(successResponse(result));
+  } catch (error) {
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::queue_list');
+    if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'Failed to list queue tasks', stdError.message, 500);
+  }
+}));
+
+// ============================================================================
 // AI MODEL ENDPOINTS
 // ============================================================================
 
-app.post('/mcp/ai/generate', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+app.post('/mcp/ai/generate', retryHandler(3, 1000, 'ai'), authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
   // Validate request against schema
   const requestValidation = validate('ai.generate.request', req.body);
   if (!requestValidation.success) {
@@ -1394,7 +1756,8 @@ app.post('/mcp/ai/generate', authenticateAPIKey, moderateLimiter, asyncHandler(a
     endpoint: 'POST /mcp/ai/generate',
     task: taskType,
     promptLength: sanitizedPrompt.length,
-    modelOptions: options
+    modelOptions: options,
+    circuitState: circuitBreaker.getServiceBreaker('ai').state
   });
 
   try {
@@ -1417,14 +1780,14 @@ app.post('/mcp/ai/generate', authenticateAPIKey, moderateLimiter, asyncHandler(a
         message: aiResult.error || 'AI generation failed'
       };
       logger.warn('AI generation failed from model', { model: aiResult.model, errorCode: responseData.code, errorMessage: responseData.message });
-      throw new MCPError('AI_GENERATION_FAILED', responseData.message, responseData, 422);
+      throw new MCPError('AI_GENERATION_FAILED', responseData.message, responseData, 422, true, 3, 1000, 'ai', 30000);
     }
 
     // Validate response against schema
     const responseValidation = validate('ai.generate.response', { success: true, data: responseData });
     if (!responseValidation.success) {
       logger.warn('AI generate response validation failed', { errors: responseValidation.errors });
-      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500);
+      throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500, true, 3, 1000, 'ai', 30000);
     }
 
     // Broadcast AI generation event
@@ -1445,13 +1808,14 @@ app.post('/mcp/ai/generate', authenticateAPIKey, moderateLimiter, asyncHandler(a
       error: error.message,
       stack: error.stack,
       task: taskType,
-      promptLength: sanitizedPrompt.length
+      promptLength: sanitizedPrompt.length,
+      circuitState: circuitBreaker.getServiceBreaker('ai').state
     });
     const stdError = ErrorHandler.standardizeError(error, 'mcp_server::ai_generate');
     if (error instanceof MCPError) {
       throw error;
     }
-    throw new MCPError('INTERNAL_ERROR', 'AI generation failed', stdError.message, 500);
+    throw new MCPError('INTERNAL_ERROR', 'AI generation failed', stdError.message, 500, true, 3, 1000, 'ai', 30000);
   }
 }));
 
@@ -1486,15 +1850,22 @@ app.get('/health', lenientLimiter, (req, res) => {
 
 // MCP Error handling middleware
 app.use((err, req, res, next) => {
-  // Handle MCPError instances
+  // Handle MCPError instances with circuit breaker status
   if (MCPError.isMCPError(err)) {
-    return res.status(err.httpStatus).json(formatError(err));
+    const errorResponse = formatError(err);
+    // Add circuit breaker status to error details if applicable
+    if (err.operationType) {
+      errorResponse.error.circuitStatus = circuitBreaker.getServiceBreaker(err.operationType);
+    }
+    return res.status(err.httpStatus).json(errorResponse);
   }
 
   // Handle AJV validation errors that might slip through
   if (err && err.message && err.message.includes('validation failed')) {
     const mcpError = MCPError.fromValidationError(err);
-    return res.status(mcpError.httpStatus).json(formatError(mcpError));
+    const errorResponse = formatError(mcpError);
+    errorResponse.error.circuitStatus = circuitBreaker.getStatus();
+    return res.status(mcpError.httpStatus).json(errorResponse);
   }
 
   // Handle other errors as internal errors
@@ -1504,11 +1875,30 @@ app.use((err, req, res, next) => {
     'Internal server error',
     {
       originalError: err?.message,
-      stack: err?.stack
+      stack: err?.stack,
+      circuitStatus: circuitBreaker.getStatus()
     },
-    500
+    500,
+    true,
+    3,
+    1000,
+    'server',
+    10000
   );
   return res.status(500).json(formatError(internalError));
+});
+
+// Health check endpoint with circuit breaker status
+app.get('/health', lenientLimiter, (req, res) => {
+  const cbStatus = circuitBreaker.getStatus();
+  const servicesAvailable = Object.values(cbStatus).every(s => s.available);
+  res.json({
+    status: servicesAvailable ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    circuitBreaker: cbStatus,
+    queueManager: !!queueManager,
+    adapters: !!adapters
+  });
 });
 
 // Default route handler

@@ -3,23 +3,90 @@
  * Hex + ASCII renderer for memory slices
  */
 
-// Add WebSocket listener for memory state changes
+// Enhanced WebSocket integration for real-time memory viewer synchronization
 if (window.mcpWebSocket) {
-  window.mcpWebSocket.addEventListener('message', (event) => {
+  const originalOnMessage = window.mcpWebSocket.onmessage;
+  window.mcpWebSocket.onmessage = function(event) {
     try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'memory.saveState' || data.type === 'memory.loadState') {
-        console.log(`📱 Memory viewer: Refreshing for state change - ${data.type}`);
-        if (window.refreshMemoryDisplay) {
-          window.refreshMemoryDisplay();
-        }
+      const { type, data, timestamp } = JSON.parse(event.data);
+      
+      // Call original handler if it exists
+      if (originalOnMessage && typeof originalOnMessage === 'function') {
+        originalOnMessage.call(this, event);
       }
+      
+      // Enhanced memory viewer specific handling
+      switch (type) {
+        case 'memory.saveState':
+        case 'memory.loadState':
+        case 'memory.write':
+        case 'programs.save':
+        case 'programs.load':
+          console.log(`📱 Memory viewer: Refreshing for memory event - ${type}`);
+          if (window.refreshMemoryDisplay) {
+            window.refreshMemoryDisplay();
+          }
+          break;
+          
+        case 'cpu.state':
+        case 'cpu.step':
+          console.log(`🖥️ Memory viewer: Updating for CPU event - ${type}`);
+          if (window.refreshMemoryDisplay) {
+            window.refreshMemoryDisplay();
+          }
+          if (window.updateCPUStateDisplay) {
+            window.updateCPUStateDisplay(data);
+          }
+          break;
+          
+        case 'queue.status':
+          console.log(`📋 Memory viewer: Queue update received - ${data.items?.length || 0} items`);
+          if (window.updateQueueDisplay) {
+            window.updateQueueDisplay(data);
+          }
+          // Optionally refresh memory if queue affects memory state
+          if (data.nextProgram && window.refreshMemoryDisplay) {
+            setTimeout(() => window.refreshMemoryDisplay(), 100);
+          }
+          break;
+          
+        case 'error':
+          console.error(`❌ MCP Error in memory viewer: ${data.message || 'Unknown error'}`);
+          if (window.logToMCP) {
+            window.logToMCP('error', `MCP Error: ${data.message || 'Unknown error'}`, { type, data, timestamp });
+          }
+          if (window.feedbackSystem && window.feedbackSystem.showToast) {
+            window.feedbackSystem.showToast(`MCP Error: ${data.message || 'Unknown error'}`, 'error');
+          }
+          break;
+          
+        case 'video.setPixel':
+        case 'video.clear':
+        case 'video.update':
+          // Video events may affect video buffer memory (0x0200-0x05FF)
+          if (window.refreshMemoryDisplay) {
+            // Only refresh if viewing video memory region
+            if (currentStartAddr >= 0x0200 && currentStartAddr <= 0x05FF) {
+              window.refreshMemoryDisplay();
+            }
+          }
+          break;
+          
+        default:
+          // Log unknown events for debugging
+          if (data && window.logToMCP) {
+            window.logToMCP('debug', `Memory viewer: Unhandled WebSocket event: ${type}`, { type, data });
+          }
+      }
+      
     } catch (e) {
-      // Ignore parse errors
+      console.warn('Memory viewer: Failed to parse WebSocket message:', e);
     }
-  });
+  };
   
-  console.log('Memory viewer integrated with MCP WebSocket for state change notifications');
+  console.log('✅ Enhanced memory viewer WebSocket integration active for real-time synchronization');
+} else {
+  console.warn('⚠ No MCP WebSocket available - memory viewer real-time updates disabled');
 }
 
 // Global variables for refresh function

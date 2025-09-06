@@ -34,6 +34,51 @@ export function initializeDebugger(rootElementId) {
     cpu = new iMaCoMpUtERussyCPU({ memory });
     console.log('Memory and CPU created');
 
+    // Set up memory breakpoint integration
+    if (memory && memory.setBreakpointHitCallback) {
+        memory.setBreakpointHitCallback((type, addr, val) => {
+            console.log(`Memory breakpoint hit: ${type} at 0x${addr.toString(16).toUpperCase()} = 0x${val.toString(16).toUpperCase()}`);
+            // Stop execution if running
+            if (runIntervalId) {
+                clearInterval(runIntervalId);
+                runIntervalId = null;
+                const runBtn = document.getElementById('run-btn');
+                if (runBtn) runBtn.textContent = 'Run';
+            }
+            updateStatus(`Memory breakpoint hit: ${type} at 0x${addr.toString(16).toUpperCase()}`, 'warning');
+            // Highlight in memory view if available
+            if (typeof window.refreshMemoryDisplay === 'function') {
+                window.refreshMemoryDisplay(addr);
+            }
+        });
+    }
+
+    // Listen for memory breakpoint events
+    if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('memoryBreakpointHit', (event) => {
+            const { type, address, value, paused } = event.detail;
+            console.log(`Memory event: ${type} at 0x${address.toString(16).toUpperCase()} = 0x${value.toString(16).toUpperCase()}, paused: ${paused}`);
+            
+            // Stop execution if running
+            if (runIntervalId) {
+                clearInterval(runIntervalId);
+                runIntervalId = null;
+                const runBtn = document.getElementById('run-btn');
+                if (runBtn) runBtn.textContent = 'Run';
+            }
+            
+            updateStatus(`Memory breakpoint: ${type} at 0x${address.toString(16).toUpperCase()}`, 'warning');
+            
+            // Update memory view to highlight breakpoint location
+            if (typeof window.refreshMemoryDisplay === 'function') {
+                window.refreshMemoryDisplay(address);
+            }
+            
+            // Update pause state display
+            updatePauseStatus(paused);
+        });
+    }
+
     // Create register panel
     const registersDiv = document.createElement('div');
     registersDiv.id = 'registers';
@@ -66,6 +111,7 @@ export function initializeDebugger(rootElementId) {
             <div class="control-buttons">
                 <button id="run-btn">Run</button>
                 <button id="step-btn">Step</button>
+                <button id="resume-btn" style="display:none;">Resume</button>
                 <button id="reset-btn">Reset</button>
             </div>
             <div class="speed-control">
@@ -73,14 +119,23 @@ export function initializeDebugger(rootElementId) {
                 <input type="range" id="speed-slider" min="1" max="1000" value="100">
             </div>
             <div class="breakpoint-controls">
-                <label>Breakpoints:</label>
+                <label>Memory Breakpoints:</label>
                 <div class="breakpoint-manager">
                     <input type="text" id="breakpoint-address" placeholder="0x0600" size="8" />
+                    <select id="breakpoint-type">
+                        <option value="write">Write</option>
+                        <option value="read">Read</option>
+                        <option value="all">Read/Write</option>
+                    </select>
                     <button id="add-breakpoint-btn">Add</button>
                     <button id="remove-breakpoint-btn">Remove</button>
+                    <button id="clear-breakpoints-btn">Clear All</button>
                     <button id="list-breakpoints-btn">List</button>
                     <div id="breakpoints-list" style="margin-top: 5px; font-size: 10px; max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.5); padding: 5px;"></div>
                 </div>
+            </div>
+            <div class="pause-status" id="pause-status" style="display:none; color: orange; font-weight: bold;">
+                Execution Paused - Check Breakpoints
             </div>
         `;
         rootElement.appendChild(controlsDiv);
@@ -89,10 +144,133 @@ export function initializeDebugger(rootElementId) {
         // Get elements after creation
         runBtn = document.getElementById('run-btn');
         stepBtn = document.getElementById('step-btn');
+        const resumeBtn = document.getElementById('resume-btn');
         resetBtn = document.getElementById('reset-btn');
         speedSlider = document.getElementById('speed-slider');
         speedValue = document.getElementById('speed-value');
+        
+        // Memory breakpoint controls
+        const breakpointAddressInput = document.getElementById('breakpoint-address');
+        const breakpointTypeSelect = document.getElementById('breakpoint-type');
+        const addBreakpointBtn = document.getElementById('add-breakpoint-btn');
+        const removeBreakpointBtn = document.getElementById('remove-breakpoint-btn');
+        const clearBreakpointsBtn = document.getElementById('clear-breakpoints-btn');
+        const listBreakpointsBtn = document.getElementById('list-breakpoints-btn');
+        const breakpointsList = document.getElementById('breakpoints-list');
+        const pauseStatusDiv = document.getElementById('pause-status');
+        
         console.log('Controls elements retrieved after creation');
+    
+        // Memory breakpoint event handlers
+        if (addBreakpointBtn && breakpointAddressInput && breakpointTypeSelect && memory && memory.addBreakpoint) {
+            addBreakpointBtn.addEventListener('click', () => {
+                const addressStr = breakpointAddressInput.value.trim();
+                const type = breakpointTypeSelect.value;
+                try {
+                    const address = parseInt(addressStr, 16);
+                    if (isNaN(address) || address < 0 || address > 0xFFFF) {
+                        updateStatus('Invalid memory breakpoint address', 'error');
+                        return;
+                    }
+                    const id = memory.addBreakpoint(address, type);
+                    updateStatus(`Memory breakpoint ${id} added at 0x${address.toString(16).toUpperCase()} (${type})`, 'success');
+                    // Refresh display
+                    refreshDisplay();
+                } catch (error) {
+                    updateStatus(`Failed to add memory breakpoint: ${error.message}`, 'error');
+                }
+            });
+        }
+    
+        if (removeBreakpointBtn && breakpointAddressInput && memory && memory.removeBreakpoint) {
+            removeBreakpointBtn.addEventListener('click', () => {
+                const addressStr = breakpointAddressInput.value.trim();
+                try {
+                    const address = parseInt(addressStr, 16);
+                    if (isNaN(address)) {
+                        updateStatus('Invalid address for removal', 'error');
+                        return;
+                    }
+                    // Find and remove breakpoint at this address
+                    const breakpoints = memory.getBreakpoints ? memory.getBreakpoints() : [];
+                    const breakpoint = breakpoints.find(bp => bp.address === address);
+                    if (breakpoint) {
+                        const removed = memory.removeBreakpoint(breakpoint.id);
+                        if (removed) {
+                            updateStatus(`Memory breakpoint removed at 0x${address.toString(16).toUpperCase()}`, 'success');
+                        } else {
+                            updateStatus('Failed to remove memory breakpoint', 'error');
+                        }
+                    } else {
+                        updateStatus(`No memory breakpoint at 0x${address.toString(16).toUpperCase()}`, 'warning');
+                    }
+                    refreshDisplay();
+                } catch (error) {
+                    updateStatus(`Failed to remove memory breakpoint: ${error.message}`, 'error');
+                }
+            });
+        }
+    
+        if (clearBreakpointsBtn && memory && memory.clearBreakpoints) {
+            clearBreakpointsBtn.addEventListener('click', () => {
+                const count = memory.clearBreakpoints();
+                updateStatus(`Cleared ${count} memory breakpoints`, 'info');
+                refreshDisplay();
+            });
+        }
+    
+        if (listBreakpointsBtn && memory && memory.getBreakpoints) {
+            listBreakpointsBtn.addEventListener('click', () => {
+                const breakpoints = memory.getBreakpoints();
+                if (breakpoints.length === 0) {
+                    breakpointsList.innerHTML = '<span style="color: #666;">No memory breakpoints set</span>';
+                } else {
+                    breakpointsList.innerHTML = breakpoints.map(bp =>
+                        `<div style="margin: 2px 0; padding: 2px; background: rgba(255,0,0,0.1); border-left: 3px solid #ff0000;">
+                            ID:${bp.id} 0x${bp.address.toString(16).toUpperCase()} (${bp.type})${bp.hasCondition ? ' [conditional]' : ''}${bp.hasCallback ? ' [callback]' : ''}
+                        </div>`
+                    ).join('');
+                }
+                updateStatus(`Found ${breakpoints.length} memory breakpoint(s)`, 'info');
+            });
+        }
+    
+        // Resume button for memory pause
+        if (resumeBtn && memory && memory.resume) {
+            resumeBtn.addEventListener('click', () => {
+                memory.resume();
+                updatePauseStatus(false);
+                resumeBtn.style.display = 'none';
+                updateStatus('Execution resumed', 'success');
+            });
+        }
+    
+        // Pause status updater
+        function updatePauseStatus(isPaused) {
+            if (pauseStatusDiv) {
+                if (isPaused) {
+                    pauseStatusDiv.style.display = 'block';
+                    resumeBtn.style.display = 'inline-block';
+                } else {
+                    pauseStatusDiv.style.display = 'none';
+                    resumeBtn.style.display = 'none';
+                }
+            }
+            if (memory && memory.isPaused) {
+                console.log(`Memory pause state: ${memory.isPaused()}`);
+            }
+        }
+    
+        // Periodically check memory pause state during run
+        setInterval(() => {
+            if (memory && memory.isPaused && runIntervalId && memory.isPaused()) {
+                clearInterval(runIntervalId);
+                runIntervalId = null;
+                const runBtn = document.getElementById('run-btn');
+                if (runBtn) runBtn.textContent = 'Run';
+                updatePauseStatus(true);
+            }
+        }, 50); // Check every 50ms
     }
     
     // Get file loading elements (they should exist now)
@@ -175,28 +353,75 @@ function handleRun() {
     const runBtn = document.getElementById('run-btn');
     if (!runBtn) return;
 
+    // Check if paused by memory breakpoint
+    if (memory && memory.isPaused && memory.isPaused()) {
+        updateStatus('Cannot run - execution paused by memory breakpoint', 'warning');
+        return;
+    }
+
     if (runIntervalId) {
         // Stop running
         clearInterval(runIntervalId);
         runIntervalId = null;
         runBtn.textContent = 'Run';
+        updateStatus('Execution stopped', 'info');
+        updatePauseStatus(false);
     } else {
-        // Start running
+        // Start running with memory pause checking
         const interval = 1000 / currentSpeed;
         runIntervalId = setInterval(() => {
-            cpu.step();
-            renderRegisters();
+            // Check memory pause state before stepping
+            if (memory && memory.isPaused && memory.isPaused()) {
+                clearInterval(runIntervalId);
+                runIntervalId = null;
+                runBtn.textContent = 'Run';
+                updatePauseStatus(true);
+                return;
+            }
+            
+            if (cpu) {
+                cpu.step();
+                renderRegisters();
+                // Check CPU breakpoints after step
+                checkBreakpoint();
+            }
         }, interval);
         runBtn.textContent = 'Stop';
+        updateStatus('Execution started', 'info');
+        updatePauseStatus(false);
     }
 }
 
 /**
  * Handle step button click
  */
-function handleStep() {
-    cpu.step();
-    renderRegisters();
+async function handleStep() {
+    // Check if paused by memory breakpoint
+    if (memory && memory.isPaused && memory.isPaused()) {
+        updateStatus('Cannot step - execution paused by memory breakpoint', 'warning');
+        return;
+    }
+
+    if (cpu) {
+        const wasAtBreakpoint = checkBreakpoint();
+        if (wasAtBreakpoint) {
+            updateStatus('Stepped from CPU breakpoint', 'info');
+            return;
+        }
+        
+        cpu.step();
+        renderRegisters();
+        
+        // Check memory pause after step
+        if (memory && memory.isPaused && memory.isPaused()) {
+            updateStatus('Paused by memory breakpoint after step', 'warning');
+            updatePauseStatus(true);
+            return;
+        }
+        
+        // Check CPU breakpoints after step
+        checkBreakpoint();
+    }
 }
 
 /**
@@ -368,6 +593,24 @@ function updateStatus(message, type = 'info') {
 }
 
 /**
+ * Update pause status display and controls
+ * @param {boolean} isPaused
+ */
+function updatePauseStatus(isPaused) {
+    const pauseStatusDiv = document.getElementById('pause-status');
+    const resumeBtn = document.getElementById('resume-btn');
+    if (pauseStatusDiv && resumeBtn) {
+        if (isPaused) {
+            pauseStatusDiv.style.display = 'block';
+            resumeBtn.style.display = 'inline-block';
+        } else {
+            pauseStatusDiv.style.display = 'none';
+            resumeBtn.style.display = 'none';
+        }
+    }
+}
+
+/**
  * Breakpoint management functions
  */
 let breakpoints = new Set(); // Store breakpoint addresses
@@ -517,17 +760,30 @@ function checkBreakpoint() {
  * Enhanced step function with breakpoint checking
  */
 async function handleStep() {
+    // Check if paused by memory breakpoint
+    if (memory && memory.isPaused && memory.isPaused()) {
+        updateStatus('Cannot step - execution paused by memory breakpoint. Click Resume.', 'warning');
+        return;
+    }
+
     if (cpu) {
         const wasAtBreakpoint = checkBreakpoint();
         if (wasAtBreakpoint) {
-            updateStatus('Stepped from breakpoint', 'info');
+            updateStatus('Stepped from CPU breakpoint', 'info');
             return;
         }
         
         cpu.step();
         renderRegisters();
         
-        // Check breakpoint after step
+        // Check memory pause after step
+        if (memory && memory.isPaused && memory.isPaused()) {
+            updateStatus('Paused by memory breakpoint after step', 'warning');
+            updatePauseStatus(true);
+            return;
+        }
+        
+        // Check CPU breakpoints after step
         checkBreakpoint();
     }
 }
@@ -539,23 +795,39 @@ function handleRun() {
     const runBtn = document.getElementById('run-btn');
     if (!runBtn) return;
 
+    // Check if paused by memory breakpoint
+    if (memory && memory.isPaused && memory.isPaused()) {
+        updateStatus('Cannot run - execution paused by memory breakpoint. Click Resume.', 'warning');
+        return;
+    }
+
     if (runIntervalId) {
         // Stop running
         clearInterval(runIntervalId);
         runIntervalId = null;
         runBtn.textContent = 'Run';
         updateStatus('Execution stopped', 'info');
+        updatePauseStatus(false);
     } else {
-        // Start running with breakpoint checking
+        // Start running with comprehensive breakpoint checking
         if (checkBreakpoint()) {
-            updateStatus('Cannot run - breakpoint at current PC', 'warning');
+            updateStatus('Cannot run - CPU breakpoint at current PC', 'warning');
             return;
         }
         
         const interval = 1000 / currentSpeed;
         runIntervalId = setInterval(() => {
             if (cpu) {
-                // Check breakpoint before each step
+                // Check memory pause state first
+                if (memory && memory.isPaused && memory.isPaused()) {
+                    clearInterval(runIntervalId);
+                    runIntervalId = null;
+                    runBtn.textContent = 'Run';
+                    updatePauseStatus(true);
+                    return;
+                }
+                
+                // Check CPU breakpoint before each step
                 if (checkBreakpoint()) {
                     clearInterval(runIntervalId);
                     runIntervalId = null;
@@ -568,7 +840,8 @@ function handleRun() {
             }
         }, interval);
         runBtn.textContent = 'Stop';
-        updateStatus('Execution started', 'info');
+        updateStatus('Execution started with breakpoint checking', 'info');
+        updatePauseStatus(false);
     }
 }
 

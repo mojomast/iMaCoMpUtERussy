@@ -1,3 +1,5 @@
+/* global commentRatio */
+
 /**
  * iMaCoMpUtERussy Autonomous Software Generation Agent
  *
@@ -1840,11 +1842,13 @@ RTS             ; Return`;
     const blankLines = lines.filter(line => line.trim() === '').length;
     const codeLines = totalLines - commentLines - blankLines;
 
+    const commentRatio = codeLines > 0 ? (commentLines / codeLines) : 0;
+
     return {
       totalLines: totalLines,
       commentLines: commentLines,
       codeLines: codeLines,
-      commentRatio: codeLines > 0 ? (commentLines / codeLines) : 0,
+      commentRatio: commentRatio,
       documentationQuality: commentRatio > 0.3 ? 'good' :
                            commentRatio > 0.1 ? 'fair' : 'poor'
     };

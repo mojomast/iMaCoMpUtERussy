@@ -1,3 +1,4 @@
+/* global describe, beforeEach, afterEach, it, console, Buffer, require, __dirname, global, process, assert */
 /**
  * Queue Manager Tests for VideoStorage-8
  * Tests single-instance access and ECC-protected save/load operations
