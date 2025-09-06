@@ -61,6 +61,7 @@ export function initializeDebugger(rootElementId) {
                     <input type="file" id="asm-load-input" accept=".asm,.txt" />
                 </label>
                 <button id="load-sample-btn">Load Sample Program</button>
+                <button id="save-memory-dump-btn">Save Memory Dump</button>
             </div>
             <div class="control-buttons">
                 <button id="run-btn">Run</button>
@@ -136,6 +137,12 @@ export function initializeDebugger(rootElementId) {
 
     if (loadSampleBtn) {
         loadSampleBtn.addEventListener('click', handleLoadSample);
+    }
+
+    // Save memory dump button
+    const saveDumpBtn = document.getElementById('save-memory-dump-btn');
+    if (saveDumpBtn) {
+        saveDumpBtn.addEventListener('click', handleSaveMemoryDump);
     }
 
     // Breakpoint controls

@@ -74,34 +74,74 @@ export class iMaCoMpUtERussyMemory {
    */
   _checkAddr(addr) {
     if (!Number.isInteger(addr) || addr < 0x0000 || addr > 0xFFFF) {
-      throw new RangeError('Address out of bounds: ' + addr);
+      throw new RangeError(`Address out of bounds: ${addr}`);
     }
   }
 
+  /**
+   * Check if address is in ROM region
+   * @param {number} addr
+   * @returns {boolean}
+   * @private
+   */
   _isROM(addr) {
     return addr >= VIDEO_ROM_START && addr <= 0xFFFF;
   }
 
+  /**
+   * Notify write listeners
+   * @param {number} addr
+   * @param {number} value
+   * @private
+   */
   _notifyWrite(addr, value) {
     for (const cb of this._writeListeners) {
       try {
         cb(addr & 0xFFFF, value & 0xFF);
       } catch (e) {
-        // listener errors should not break memory writes
         console.error('Memory write listener error', e);
       }
     }
   }
 
+  /**
+   * Notify read listeners
+   * @param {number} addr
+   * @param {number} value
+   * @private
+   */
   _notifyRead(addr, value) {
     for (const cb of this._readListeners) {
       try {
         cb(addr & 0xFFFF, value & 0xFF);
       } catch (e) {
-        // listener errors should not break memory reads
         console.error('Memory read listener error', e);
       }
     }
+  }
+
+  /**
+   * Handle ROM write validation and logging
+   * @param {number} addr
+   * @param {number} value
+   * @returns {boolean} true if write should proceed
+   * @private
+   */
+  _handleROMWrite(addr, value) {
+    if (!this._isROM(addr)) return true;
+
+    const msg = `Write to ROM ignored at 0x${addr.toString(16).padStart(4, '0')}: 0x${value.toString(16).padStart(2, '0')}`;
+    
+    if (this.readonlyROM && !this.allowRomWrites) {
+      throw new Error(msg.replace('ignored', 'forbidden (readonlyROM=true)'));
+    } else if (!this.allowRomWrites) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn(msg);
+      }
+      return false;
+    }
+    
+    return true;
   }
 
   /**
@@ -111,7 +151,8 @@ export class iMaCoMpUtERussyMemory {
    */
   readByte(addr) {
     this._checkAddr(addr);
-    const value = this.buffer[addr & 0xFFFF];
+    const maskedAddr = addr & 0xFFFF;
+    const value = this.buffer[maskedAddr];
     this._notifyRead(addr, value);
     return value;
   }
@@ -124,20 +165,16 @@ export class iMaCoMpUtERussyMemory {
    */
   writeByte(addr, value) {
     this._checkAddr(addr);
-    const a = addr & 0xFFFF;
-    const v = value & 0xFF;
-    if (this._isROM(a)) {
-      const msg = `Write to ROM ignored at 0x${a.toString(16).padStart(4,'0')}: 0x${v.toString(16).padStart(2,'0')}`;
-      if (this.readonlyROM && !this.allowRomWrites) {
-        throw new Error(msg.replace('ignored','forbidden (readonlyROM=true)'));
-      } else if (!this.allowRomWrites) {
-        // default: ignore with a warning
-        if (typeof console !== 'undefined' && console.warn) console.warn(msg);
-        return;
-      }
+    const maskedAddr = addr & 0xFFFF;
+    const maskedValue = value & 0xFF;
+
+    // Check ROM write permissions
+    if (!this._handleROMWrite(maskedAddr, maskedValue)) {
+      return;
     }
-    this.buffer[a] = v;
-    this._notifyWrite(a, v);
+
+    this.buffer[maskedAddr] = maskedValue;
+    this._notifyWrite(maskedAddr, maskedValue);
   }
 
   /**
@@ -147,9 +184,9 @@ export class iMaCoMpUtERussyMemory {
    */
   readWord(addr) {
     this._checkAddr(addr);
-    const a = addr & 0xFFFF;
-    const lo = this.readByte(a);
-    const hi = this.readByte((a + 1) & 0xFFFF);
+    const maskedAddr = addr & 0xFFFF;
+    const lo = this.readByte(maskedAddr);
+    const hi = this.readByte((maskedAddr + 1) & 0xFFFF);
     return (hi << 8) | lo;
   }
 
@@ -160,12 +197,12 @@ export class iMaCoMpUtERussyMemory {
    */
   writeWord(addr, value) {
     this._checkAddr(addr);
-    const a = addr & 0xFFFF;
-    const v = value & 0xFFFF;
-    const lo = v & 0xFF;
-    const hi = (v >> 8) & 0xFF;
-    this.writeByte(a, lo);
-    this.writeByte((a + 1) & 0xFFFF, hi);
+    const maskedAddr = addr & 0xFFFF;
+    const maskedValue = value & 0xFFFF;
+    const lo = maskedValue & 0xFF;
+    const hi = (maskedValue >> 8) & 0xFF;
+    this.writeByte(maskedAddr, lo);
+    this.writeByte((maskedAddr + 1) & 0xFFFF, hi);
   }
 
   /**

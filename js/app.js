@@ -22,6 +22,7 @@ import { initializeMemoryViewer } from './ui/memory-viewer.js';
 import { initializeVideoManager } from './ui/video-manager.js';
 import { initializeNaturalLanguageInput } from './ui/natural-language-input.js';
 import { initializeAssemblyPanel } from './ui/assembly-panel.js';
+import { ConsoleUI } from './ui/console.js';
 import VoiceControlSystem from './ui/voice-control.js';
 import { UIFeedbackSystem } from './ui/feedback-system.js';
 import LayoutManager from './ui/layout-manager.js';
@@ -277,6 +278,52 @@ async function initializeApp() {
         } catch (error) {
             console.error('❌ Assembly panel initialization failed:', error);
         }
+    
+        // Initialize console/terminal UI with layout manager integration
+        const consoleElement = document.getElementById('console');
+        console.log('Console element found:', !!consoleElement);
+        if (consoleElement) {
+            console.log('Calling consoleUI.initialize...');
+            window.consoleUI.initialize('console');
+            
+            // Integrate with layout manager for show/hide control
+            if (window.layoutManager) {
+                const consolePanel = window.layoutManager.panels.find(p => p.id === 'console');
+                if (consolePanel) {
+                    // Add show/hide methods to console module
+                    window.consoleShow = () => window.layoutManager.togglePanel(consolePanel, true);
+                    window.consoleHide = () => window.layoutManager.togglePanel(consolePanel, false);
+                    console.log('✅ Console integrated with layout manager');
+                }
+            }
+            
+            console.log('✓ Console initialized with layout integration');
+        } else {
+            console.warn('⚠ Console element not found');
+        }
+    
+        // Global keyboard input handler for I/O
+        document.addEventListener('keydown', (e) => {
+            // Only handle if console is active/visible
+            if (window.layoutManager && window.layoutManager.panels.find(p => p.id === 'console' && p.visible)) {
+                // Map key to ASCII and write to I/O address if console input is focused or global I/O mode
+                if (window.consoleUI && window.consoleUI.memory) {
+                    const ioAddr = window.consoleUI.ioAddress || 0x0600;
+                    const charCode = e.key.charCodeAt(0);
+                    if (charCode >= 32 && charCode <= 126) { // Printable ASCII
+                        window.consoleUI.memory.writeByte(ioAddr, charCode);
+                        window.consoleUI.writeOutput(`${e.key}`);
+                        console.log(`Keyboard I/O: Wrote 0x${charCode.toString(16).toUpperCase()} to 0x${ioAddr.toString(16).toUpperCase()}`);
+                    } else if (e.key === 'Enter') {
+                        window.consoleUI.memory.writeByte(ioAddr, 13); // CR
+                        window.consoleUI.memory.writeByte(ioAddr + 1, 10); // LF
+                        window.consoleUI.writeOutput('\n');
+                    }
+                }
+            }
+        });
+    
+        console.log('✓ Global keyboard I/O handler installed');
     
         // Initialize voice control system with MCP integration and timeoutFetch
         console.log('🎤 Initializing voice control system...');

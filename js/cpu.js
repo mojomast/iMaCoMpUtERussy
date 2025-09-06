@@ -4,6 +4,12 @@
  * Created by Kyle Durepos
  */
 
+// Import breakpoints from debugger if available
+let breakpoints = new Set();
+if (typeof window !== 'undefined' && window.breakpoints) {
+    breakpoints = window.breakpoints;
+}
+
 import { iMaCoMpUtERussyMemory } from './memory.js';
 
 // Memory map constants
@@ -198,6 +204,35 @@ export class iMaCoMpUtERussyCPU {
     }
 
     /**
+     * Addressing mode dispatcher based on mode string
+     * @param {string} mode - Addressing mode ('imm', 'abs', 'zp', 'zpx', 'absx', 'absy', 'indy', 'imp')
+     * @returns {number|null} Operand value or effective address
+     */
+    getAddressOrValue(mode) {
+        switch (mode) {
+            case 'imm':
+                return this.addrImmediate();
+            case 'abs':
+                return this.addrAbsolute();
+            case 'zp':
+                return this.addrZeroPage();
+            case 'imp':
+                return null;
+            case 'zpx':
+                return this.addrZeroPageX();
+            case 'absx':
+                return this.addrAbsoluteX();
+            case 'absy':
+                return this.addrAbsoluteY();
+            case 'indy':
+                return this.addrIndirectY();
+            default:
+                console.warn(`Unknown addressing mode: ${mode}`);
+                return null;
+        }
+    }
+
+    /**
      * Addressing mode: Immediate - next byte is operand
      * @returns {number} Operand value
      */
@@ -278,132 +313,142 @@ export class iMaCoMpUtERussyCPU {
         const opcode = this.readByte(this.PC++);
         let cycles = 1; // Base cycles, not accurate
 
-        switch (opcode) {
-            // BRK - Break (software interrupt)
-            case 0x00: {
-                cycles = this.handleInterrupt(true); // BRK interrupt
-                break;
-            }
+        // Use opcode table for dispatch (to be populated with all instructions)
+        const instructionHandlers = this.getInstructionHandlers();
+        const handler = instructionHandlers[opcode];
+        if (handler) {
+            cycles = handler.call(this);
+        } else {
+            console.warn(`Unknown opcode 0x${opcode.toString(16).padStart(2, '0')} at PC 0x${(this.PC - 1).toString(16).padStart(4, '0')}`);
+            // Treat as NOP
+        }
 
-            // RTI - Return from Interrupt
-            case 0x40: {
-                // Pull P register
+        return cycles;
+    }
+
+    /**
+     * Get instruction handlers object mapping opcode to handler functions
+     * @returns {Object} Opcode to handler map
+     */
+    getInstructionHandlers() {
+        return {
+            // Interrupt instructions
+            0x00: () => this.handleInterrupt(true), // BRK
+            0x40: () => {
                 this.P = this.pop();
-                // Ensure bit 5 is set
                 this.P |= (1 << FLAGS.UNUSED);
-                // Pull PC (low byte first)
                 const low = this.pop();
                 const high = this.pop();
                 this.PC = (high << 8) | low;
-                cycles = 6; // Standard RTI cycles
                 console.log(`RTI returned to PC=0x${this.PC.toString(16).toUpperCase()}`);
-                break;
-            }
-            // LDA - Load Accumulator
-            case 0xA9: { // LDA immediate
-                this.A = this.addrImmediate();
+                return 6;
+            }, // RTI
+
+            // Load Accumulator (LDA)
+            0xA9: () => { // immediate
+                this.A = this.getAddressOrValue('imm');
                 this.updateZN(this.A);
-                break;
-            }
-            case 0xAD: { // LDA absolute
-                const addr = this.addrAbsolute();
+                return 2;
+            },
+            0xAD: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 this.A = this.readByte(addr);
                 this.updateZN(this.A);
-                break;
-            }
-            case 0xA5: { // LDA zero page
-                const addr = this.addrZeroPage();
+                return 4;
+            },
+            0xA5: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 this.A = this.readByte(addr);
                 this.updateZN(this.A);
-                break;
-            }
+                return 3;
+            },
 
-            // LDX - Load X register
-            case 0xA2: { // LDX immediate
-                this.X = this.addrImmediate();
+            // Load X Register (LDX)
+            0xA2: () => { // immediate
+                this.X = this.getAddressOrValue('imm');
                 this.updateZN(this.X);
-                break;
-            }
-            case 0xAE: { // LDX absolute
-                const addr = this.addrAbsolute();
+                return 2;
+            },
+            0xAE: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 this.X = this.readByte(addr);
                 this.updateZN(this.X);
-                break;
-            }
-            case 0xA6: { // LDX zero page
-                const addr = this.addrZeroPage();
+                return 4;
+            },
+            0xA6: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 this.X = this.readByte(addr);
                 this.updateZN(this.X);
-                break;
-            }
+                return 3;
+            },
 
-            // LDY - Load Y register
-            case 0xA0: { // LDY immediate
-                this.Y = this.addrImmediate();
+            // Load Y Register (LDY)
+            0xA0: () => { // immediate
+                this.Y = this.getAddressOrValue('imm');
                 this.updateZN(this.Y);
-                break;
-            }
-            case 0xAC: { // LDY absolute
-                const addr = this.addrAbsolute();
+                return 2;
+            },
+            0xAC: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 this.Y = this.readByte(addr);
                 this.updateZN(this.Y);
-                break;
-            }
-            case 0xA4: { // LDY zero page
-                const addr = this.addrZeroPage();
+                return 4;
+            },
+            0xA4: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 this.Y = this.readByte(addr);
                 this.updateZN(this.Y);
-                break;
-            }
+                return 3;
+            },
 
-            // STA - Store Accumulator
-            case 0x8D: { // STA absolute
-                const addr = this.addrAbsolute();
+            // Store Accumulator (STA)
+            0x8D: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 this.writeByte(addr, this.A);
-                break;
-            }
-            case 0x85: { // STA zero page
-                const addr = this.addrZeroPage();
+                return 4;
+            },
+            0x85: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 this.writeByte(addr, this.A);
-                break;
-            }
+                return 3;
+            },
 
-            // STX - Store X register
-            case 0x8E: { // STX absolute
-                const addr = this.addrAbsolute();
+            // Store X Register (STX)
+            0x8E: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 this.writeByte(addr, this.X);
-                break;
-            }
-            case 0x86: { // STX zero page
-                const addr = this.addrZeroPage();
+                return 4;
+            },
+            0x86: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 this.writeByte(addr, this.X);
-                break;
-            }
+                return 3;
+            },
 
-            // STY - Store Y register
-            case 0x8C: { // STY absolute
-                const addr = this.addrAbsolute();
+            // Store Y Register (STY)
+            0x8C: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 this.writeByte(addr, this.Y);
-                break;
-            }
-            case 0x84: { // STY zero page
-                const addr = this.addrZeroPage();
+                return 4;
+            },
+            0x84: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 this.writeByte(addr, this.Y);
-                break;
-            }
+                return 3;
+            },
 
-            // ADC - Add with Carry
-            case 0x69: { // ADC immediate
-                const operand = this.addrImmediate();
+            // Add with Carry (ADC)
+            0x69: () => { // immediate
+                const operand = this.getAddressOrValue('imm');
                 const result = this.A + operand + (this.getFlag('C') ? 1 : 0);
                 this.setFlag('C', result > 0xFF);
                 this.setFlag('V', ((this.A ^ result) & (operand ^ result) & 0x80) !== 0);
                 this.A = result & 0xFF;
                 this.updateZN(this.A);
-                break;
-            }
-            case 0x6D: { // ADC absolute
-                const addr = this.addrAbsolute();
+                return 2;
+            },
+            0x6D: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 const operand = this.readByte(addr);
                 const carry = this.getFlag('C') ? 1 : 0;
                 const result = this.A + operand + carry;
@@ -411,325 +456,313 @@ export class iMaCoMpUtERussyCPU {
                 this.setFlag('V', ((this.A ^ result) & (operand ^ result) & 0x80) !== 0);
                 this.A = result & 0xFF;
                 this.updateZN(this.A);
-                break;
-            }
+                return 4;
+            },
 
-            // SBC - Subtract with Carry
-            case 0xE9: { // SBC immediate
-                const operand = this.addrImmediate();
+            // Subtract with Carry (SBC)
+            0xE9: () => { // immediate
+                const operand = this.getAddressOrValue('imm');
                 const result = this.A - operand - (this.getFlag('C') ? 0 : 1);
                 this.setFlag('C', result >= 0);
                 this.setFlag('V', ((this.A ^ result) & (~operand ^ result) & 0x80) !== 0);
                 this.A = result & 0xFF;
                 this.updateZN(this.A);
-                break;
-            }
+                return 2;
+            },
 
-            // INC - Increment Memory
-            case 0xEE: { // INC absolute
-                const addr = this.addrAbsolute();
+            // Increment Memory (INC)
+            0xEE: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 const value = (this.readByte(addr) + 1) & 0xFF;
                 this.writeByte(addr, value);
                 this.updateZN(value);
-                break;
-            }
-            case 0xE6: { // INC zero page
-                const addr = this.addrZeroPage();
+                return 6;
+            },
+            0xE6: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 const value = (this.readByte(addr) + 1) & 0xFF;
                 this.writeByte(addr, value);
                 this.updateZN(value);
-                break;
-            }
+                return 5;
+            },
 
-            // DEC - Decrement Memory
-            case 0xCE: { // DEC absolute
-                const addr = this.addrAbsolute();
+            // Decrement Memory (DEC)
+            0xCE: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 const value = (this.readByte(addr) - 1) & 0xFF;
                 this.writeByte(addr, value);
                 this.updateZN(value);
-                break;
-            }
-            case 0xC6: { // DEC zero page
-                const addr = this.addrZeroPage();
+                return 6;
+            },
+            0xC6: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 const value = (this.readByte(addr) - 1) & 0xFF;
                 this.writeByte(addr, value);
                 this.updateZN(value);
-                break;
-            }
+                return 5;
+            },
 
-            // INX - Increment X Register
-            case 0xE8: {
+            // Increment X Register (INX)
+            0xE8: () => {
                 this.X = (this.X + 1) & 0xFF;
                 this.updateZN(this.X);
-                break;
-            }
+                return 2;
+            },
 
-            // INY - Increment Y Register
-            case 0xC8: {
+            // Increment Y Register (INY)
+            0xC8: () => {
                 this.Y = (this.Y + 1) & 0xFF;
                 this.updateZN(this.Y);
-                break;
-            }
+                return 2;
+            },
 
-            // DEX - Decrement X Register
-            case 0xCA: {
+            // Decrement X Register (DEX)
+            0xCA: () => {
                 this.X = (this.X - 1) & 0xFF;
                 this.updateZN(this.X);
-                break;
-            }
+                return 2;
+            },
 
-            // DEY - Decrement Y Register
-            case 0x88: {
+            // Decrement Y Register (DEY)
+            0x88: () => {
                 this.Y = (this.Y - 1) & 0xFF;
                 this.updateZN(this.Y);
-                break;
-            }
+                return 2;
+            },
 
-            // AND - Logical AND
-            case 0x29: { // AND immediate
-                this.A &= this.addrImmediate();
+            // Logical AND (AND)
+            0x29: () => { // immediate
+                this.A &= this.getAddressOrValue('imm');
                 this.updateZN(this.A);
-                break;
-            }
-            case 0x2D: { // AND absolute
-                const addr = this.addrAbsolute();
+                return 2;
+            },
+            0x2D: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 this.A &= this.readByte(addr);
                 this.updateZN(this.A);
-                break;
-            }
+                return 4;
+            },
 
-            // ORA - Logical OR
-            case 0x09: { // ORA immediate
-                this.A |= this.addrImmediate();
+            // Logical OR (ORA)
+            0x09: () => { // immediate
+                this.A |= this.getAddressOrValue('imm');
                 this.updateZN(this.A);
-                break;
-            }
+                return 2;
+            },
 
-            // EOR - Exclusive OR
-            case 0x49: { // EOR immediate
-                this.A ^= this.addrImmediate();
+            // Exclusive OR (EOR)
+            0x49: () => { // immediate
+                this.A ^= this.getAddressOrValue('imm');
                 this.updateZN(this.A);
-                break;
-            }
+                return 2;
+            },
 
-            // CMP - Compare accumulator
-            case 0xC9: { // CMP immediate
-                const operand = this.addrImmediate();
+            // Compare Accumulator (CMP)
+            0xC9: () => { // immediate
+                const operand = this.getAddressOrValue('imm');
                 const result = this.A - operand;
-                this.setFlag('C', this.A >= operand); // Carry clear if A < operand
+                this.setFlag('C', this.A >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xC5: { // CMP zero page
-                const addr = this.addrZeroPage();
+                return 2;
+            },
+            0xC5: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 const operand = this.readByte(addr);
                 const result = this.A - operand;
                 this.setFlag('C', this.A >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xCD: { // CMP absolute
-                const addr = this.addrAbsolute();
+                return 3;
+            },
+            0xCD: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 const operand = this.readByte(addr);
                 const result = this.A - operand;
                 this.setFlag('C', this.A >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xD5: { // CMP zero page,X
-                const addr = this.addrZeroPageX();
+                return 4;
+            },
+            0xD5: () => { // zero page,X
+                const addr = this.getAddressOrValue('zpx');
                 const operand = this.readByte(addr);
                 const result = this.A - operand;
                 this.setFlag('C', this.A >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xD1: { // CMP (zero page),Y
-                const addr = this.addrIndirectY();
+                return 4;
+            },
+            0xD1: () => { // indirect,Y
+                const addr = this.getAddressOrValue('indy');
                 const operand = this.readByte(addr);
                 const result = this.A - operand;
                 this.setFlag('C', this.A >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xDD: { // CMP absolute,X
-                const addr = this.addrAbsoluteX();
+                return 5;
+            },
+            0xDD: () => { // absolute,X
+                const addr = this.getAddressOrValue('absx');
                 const operand = this.readByte(addr);
                 const result = this.A - operand;
                 this.setFlag('C', this.A >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xD9: { // CMP absolute,Y
-                const addr = this.addrAbsoluteY();
+                return 4;
+            },
+            0xD9: () => { // absolute,Y
+                const addr = this.getAddressOrValue('absy');
                 const operand = this.readByte(addr);
                 const result = this.A - operand;
                 this.setFlag('C', this.A >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
+                return 4;
+            },
 
-            // CPX - Compare X register
-            case 0xE0: { // CPX immediate
-                const operand = this.addrImmediate();
+            // Compare X Register (CPX)
+            0xE0: () => { // immediate
+                const operand = this.getAddressOrValue('imm');
                 const result = this.X - operand;
                 this.setFlag('C', this.X >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xE4: { // CPX zero page
-                const addr = this.addrZeroPage();
-                const operand = this.readByte(addr);
-                const result = this.X - operand;
-                this.setFlag('C', this.X >= operand);
-                this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xEC: { // CPX absolute
-                const addr = this.addrAbsolute();
+                return 2;
+            },
+            0xE4: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 const operand = this.readByte(addr);
                 const result = this.X - operand;
                 this.setFlag('C', this.X >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
+                return 3;
+            },
+            0xEC: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
+                const operand = this.readByte(addr);
+                const result = this.X - operand;
+                this.setFlag('C', this.X >= operand);
+                this.updateZN(result & 0xFF);
+                return 4;
+            },
 
-            // CPY - Compare Y register
-            case 0xC0: { // CPY immediate
-                const operand = this.addrImmediate();
+            // Compare Y Register (CPY)
+            0xC0: () => { // immediate
+                const operand = this.getAddressOrValue('imm');
                 const result = this.Y - operand;
                 this.setFlag('C', this.Y >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xC4: { // CPY zero page
-                const addr = this.addrZeroPage();
+                return 2;
+            },
+            0xC4: () => { // zero page
+                const addr = this.getAddressOrValue('zp');
                 const operand = this.readByte(addr);
                 const result = this.Y - operand;
                 this.setFlag('C', this.Y >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
-            case 0xCC: { // CPY absolute
-                const addr = this.addrAbsolute();
+                return 3;
+            },
+            0xCC: () => { // absolute
+                const addr = this.getAddressOrValue('abs');
                 const operand = this.readByte(addr);
                 const result = this.Y - operand;
                 this.setFlag('C', this.Y >= operand);
                 this.updateZN(result & 0xFF);
-                break;
-            }
+                return 4;
+            },
 
-            // JMP - Jump
-            case 0x4C: { // JMP absolute
-                this.PC = this.addrAbsolute();
-                break;
-            }
+            // Jump (JMP)
+            0x4C: () => { // absolute
+                this.PC = this.getAddressOrValue('abs');
+                return 3;
+            },
 
-            // BEQ - Branch if Equal (Zero set)
-            case 0xF0: {
-                const offset = this.addrImmediate();
+            // Branch if Equal (BEQ)
+            0xF0: () => {
+                const offset = this.getAddressOrValue('imm');
                 if (this.getFlag('Z')) {
-                    // Branch target is PC + signed offset
                     const signedOffset = offset < 128 ? offset : offset - 256;
                     this.PC = (this.PC + signedOffset) & 0xFFFF;
+                    return 3; // +1 if branch taken (simplified)
                 }
-                break;
-            }
+                return 2;
+            },
 
-            // BNE - Branch if Not Equal (Zero clear)
-            case 0xD0: {
-                const offset = this.addrImmediate();
+            // Branch if Not Equal (BNE)
+            0xD0: () => {
+                const offset = this.getAddressOrValue('imm');
                 if (!this.getFlag('Z')) {
-                    // Branch target is PC + signed offset
                     const signedOffset = offset < 128 ? offset : offset - 256;
                     this.PC = (this.PC + signedOffset) & 0xFFFF;
+                    return 3;
                 }
-                break;
-            }
+                return 2;
+            },
 
-            // BCS - Branch if Carry Set
-            case 0xB0: {
-                const offset = this.addrImmediate();
+            // Branch if Carry Set (BCS)
+            0xB0: () => {
+                const offset = this.getAddressOrValue('imm');
                 if (this.getFlag('C')) {
-                    // Branch target is PC + signed offset
                     const signedOffset = offset < 128 ? offset : offset - 256;
                     this.PC = (this.PC + signedOffset) & 0xFFFF;
+                    return 3;
                 }
-                break;
-            }
+                return 2;
+            },
 
-            // PHA - Push Accumulator
-            case 0x48: {
+            // Push Accumulator (PHA)
+            0x48: () => {
                 this.push(this.A);
-                break;
-            }
+                return 3;
+            },
 
-            // PLA - Pull Accumulator
-            case 0x68: {
+            // Pull Accumulator (PLA)
+            0x68: () => {
                 this.A = this.pop();
                 this.updateZN(this.A);
-                break;
-            }
+                return 4;
+            },
 
-            // VLD - Video Load (stub: read from video buffer)
-            case 0x8B: { // VLD immediate block index
-                const blockIndex = this.addrImmediate();
+            // Video Load (VLD)
+            0x8B: () => { // immediate block index
+                const blockIndex = this.getAddressOrValue('imm');
                 // TODO: Implement actual video block loading from $0200-$05FF
-                // For now, just set success flag and load dummy data
                 this.setFlag('C', true); // Success flag
-                break;
-            }
+                return 2;
+            },
 
-            // VST - Video Store (write to video buffer)
-            case 0x9B: { // VST immediate block index
-                const blockIndex = this.addrImmediate();
-                // Write current A register to video buffer position
+            // Video Store (VST)
+            0x9B: () => { // immediate block index
+                const blockIndex = this.getAddressOrValue('imm');
                 const addr = 0x0200 + blockIndex;
-                if (addr <= 0x05FF) { // Stay within video buffer range
+                if (addr <= 0x05FF) {
                     this.memory.writeByte(addr, this.A);
                     this.setFlag('C', false); // Success
                 } else {
-                    this.setFlag('C', true); // Error - out of bounds
+                    this.setFlag('C', true); // Error
                 }
-                break;
-            }
+                return 2;
+            },
 
-            // VUP - Video Update (update display)
-            case 0xAB: { // VUP implied
-                // Trigger video display update if available
+            // Video Update (VUP)
+            0xAB: () => { // implied
                 if (window.videoDisplay) {
                     window.videoDisplay.updateDisplay();
-                    this.setFlag('C', false); // Success
+                    this.setFlag('C', false);
                 } else {
-                    this.setFlag('C', true); // Error - no display
+                    this.setFlag('C', true);
                 }
-                break;
-            }
+                return 1;
+            },
 
-            // VDL - Video Delay (timing control)
-            case 0xBB: { // VDL immediate frames
-                const frames = this.addrImmediate();
-                // Simple delay implementation (16ms per frame = ~60fps)
+            // Video Delay (VDL)
+            0xBB: () => { // immediate frames
+                const frames = this.getAddressOrValue('imm');
                 const delayMs = frames * 16;
-                setTimeout(() => {
-                    // Resume execution after delay
-                }, delayMs);
-                this.setFlag('C', false); // Success
-                break;
-            }
+                setTimeout(() => {}, delayMs);
+                this.setFlag('C', false);
+                return 2;
+            },
 
-            // HLT - Halt
-            case 0x3A: {
+            // Halt (HLT)
+            0x3A: () => {
                 this.running = false;
-                break;
+                return 1;
             }
-
-            default:
-                // Unknown opcode - treat as NOP
-                break;
-        }
-
-        return cycles;
+        };
     }
 
     /**
@@ -738,6 +771,16 @@ export class iMaCoMpUtERussyCPU {
      */
     step() {
         if (!this.running) return 0;
+
+        // Check for breakpoint before executing instruction
+        if (typeof window !== 'undefined' && window.breakpoints && window.breakpoints.has(this.PC)) {
+            console.log(`Breakpoint hit at PC=0x${this.PC.toString(16).toUpperCase()}`);
+            this.running = false; // Stop execution on breakpoint
+            if (typeof window.updateStatus === 'function') {
+                window.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
+            }
+            return 0;
+        }
 
         // Check for pending interrupt before executing instruction
         if (this.pendingIRQ && !this.getFlag('I')) {
@@ -757,6 +800,16 @@ export class iMaCoMpUtERussyCPU {
             } catch (error) {
                 console.warn('Video update during CPU step failed:', error);
             }
+        }
+
+        // Check for breakpoint after instruction execution
+        if (typeof window !== 'undefined' && window.breakpoints && window.breakpoints.has(this.PC)) {
+            console.log(`Breakpoint hit at PC=0x${this.PC.toString(16).toUpperCase()} after instruction`);
+            this.running = false;
+            if (typeof window.updateStatus === 'function') {
+                window.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
+            }
+            return cycles;
         }
 
         return cycles;

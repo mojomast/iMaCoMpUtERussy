@@ -51,6 +51,19 @@
             </div>
         </div>
         
+        <!-- Console/Terminal Panel -->
+        <div id="console" class="panel">
+            <div class="panel-header">
+                <span>Terminal I/O</span>
+            </div>
+            <div class="panel-content">
+                <!-- Console content will be populated by JS -->
+                <div style="padding: 20px; color: #00ff00; font-family: monospace;">
+                    <p>Loading terminal interface...</p>
+                </div>
+            </div>
+        </div>
+        
         <!-- MCP Display for logs -->
         <div id="mcp-display" class="panel">
             <div class="panel-header">
@@ -107,6 +120,10 @@
             <label class="toolbar-toggle">
                 <input type="checkbox" id="toggle-mcp-logs" data-panel="mcp-display">
                 <span class="toggle-label">MCP Logs</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-console" data-panel="console">
+                <span class="toggle-label">Console</span>
             </label>
         </div>
     </div>

@@ -216,11 +216,108 @@ export function initializeMemoryViewer(rootElementId) {
         return;
     }
 
+    // Create navigation and search controls
+    const controlsDiv = document.createElement('div');
+    controlsDiv.className = 'memory-controls';
+    controlsDiv.style.cssText = 'display: flex; gap: 10px; margin-bottom: 10px; padding: 5px; background: rgba(0,0,0,0.5); border: 1px solid #00ff00;';
+    controlsDiv.innerHTML = `
+        <label style="color: #00ff00; font-family: monospace;">
+            Address: <input type="text" id="memory-address-input" value="0x0200" size="6" style="width: 80px; padding: 2px; background: #333; color: #00ff00; border: 1px solid #00ff00;">
+        </label>
+        <button id="memory-goto-btn" style="padding: 5px 10px; background: #00ff00; color: #000; border: none; cursor: pointer;">Go To</button>
+        <button id="memory-prev-page-btn" style="padding: 5px 10px; background: #0080ff; color: white; border: none; cursor: pointer;">Prev Page</button>
+        <button id="memory-next-page-btn" style="padding: 5px 10px; background: #0080ff; color: white; border: none; cursor: pointer;">Next Page</button>
+        <label style="color: #00ff00; font-family: monospace;">
+            Search: <input type="text" id="memory-search-input" placeholder="e.g. FF or 41" size="6" style="width: 60px; padding: 2px; background: #333; color: #00ff00; border: 1px solid #00ff00;">
+        </label>
+        <button id="memory-search-btn" style="padding: 5px 10px; background: #ff8000; color: white; border: none; cursor: pointer;">Search</button>
+    `;
+    rootElement.appendChild(controlsDiv);
+
+    // Get control elements
+    const addressInput = controlsDiv.querySelector('#memory-address-input');
+    const gotoBtn = controlsDiv.querySelector('#memory-goto-btn');
+    const prevPageBtn = controlsDiv.querySelector('#memory-prev-page-btn');
+    const nextPageBtn = controlsDiv.querySelector('#memory-next-page-btn');
+    const searchInput = controlsDiv.querySelector('#memory-search-input');
+    const searchBtn = controlsDiv.querySelector('#memory-search-btn');
+
+    // Event listeners
+    if (gotoBtn) {
+        gotoBtn.addEventListener('click', () => {
+            const addr = parseInt(addressInput.value, 16);
+            if (!isNaN(addr) && addr >= 0 && addr <= 0xFFFF) {
+                currentStartAddr = addr;
+                addressInput.value = `0x${addr.toString(16).toUpperCase()}`;
+                refresh();
+                console.log(`Memory view jumped to 0x${addr.toString(16).toUpperCase()}`);
+            } else {
+                console.warn('Invalid address');
+            }
+        });
+    }
+
+    if (prevPageBtn) {
+        prevPageBtn.addEventListener('click', () => {
+            currentStartAddr = Math.max(0, currentStartAddr - currentLength);
+            addressInput.value = `0x${currentStartAddr.toString(16).toUpperCase()}`;
+            refresh();
+            console.log(`Memory view previous page to 0x${currentStartAddr.toString(16).toUpperCase()}`);
+        });
+    }
+
+    if (nextPageBtn) {
+        nextPageBtn.addEventListener('click', () => {
+            currentStartAddr = Math.min(0xFFFF - currentLength, currentStartAddr + currentLength);
+            addressInput.value = `0x${currentStartAddr.toString(16).toUpperCase()}`;
+            refresh();
+            console.log(`Memory view next page to 0x${currentStartAddr.toString(16).toUpperCase()}`);
+        });
+    }
+
+    if (searchBtn) {
+        searchBtn.addEventListener('click', () => {
+            const searchValue = searchInput.value.trim();
+            if (!searchValue) return;
+
+            let searchByte;
+            if (searchValue.startsWith('0x')) {
+                searchByte = parseInt(searchValue.slice(2), 16);
+            } else {
+                searchByte = parseInt(searchValue, 16);
+            }
+
+            if (isNaN(searchByte) || searchByte < 0 || searchByte > 255) {
+                console.warn('Invalid search value');
+                return;
+            }
+
+            // Search from current address
+            for (let i = currentStartAddr; i < 0x10000; i++) {
+                if (currentMemory.readByte(i) === searchByte) {
+                    currentStartAddr = Math.max(0, i - currentLength/2); // Center on match
+                    addressInput.value = `0x${currentStartAddr.toString(16).toUpperCase()}`;
+                    refresh();
+                    console.log(`Memory search found 0x${searchByte.toString(16).toUpperCase()} near 0x${i.toString(16).toUpperCase()}`);
+                    return;
+                }
+            }
+            console.log('Search value not found');
+        });
+    }
+
     // Import the CPU and memory from debugger module if available
     import('./debugger.js').then(debuggerModule => {
         if (debuggerModule.memory) {
-            const memoryDisplay = document.getElementById('memory-display') || rootElement.querySelector('#memory-display');
+            const memoryDisplay = document.getElementById('memory-display') || rootElement.querySelector('#memory-display') || rootElement;
             if (memoryDisplay) {
+                // Create memory display div if it doesn't exist
+                if (memoryDisplay.id !== 'memory-display') {
+                    const displayDiv = document.createElement('div');
+                    displayDiv.id = 'memory-display';
+                    rootElement.appendChild(displayDiv);
+                    memoryDisplay = displayDiv;
+                }
                 // Start at 0x0200 (video buffer) and show more useful memory regions
                 // Show video buffer + user RAM (0x0200-0x0800 = 1536 bytes)
                 renderMemorySlice(debuggerModule.memory, 0x0200, 0x600, memoryDisplay);
@@ -244,6 +341,12 @@ export function initializeMemoryViewer(rootElementId) {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
+        .memory-controls button:hover {
+          opacity: 0.8;
+        }
+        .memory-controls input:focus {
+          outline: 1px solid #00ff00;
+        }
         .ai-mcp-log-panel {
           font-family: 'Courier New', monospace;
           border: 2px solid #00ff00;
@@ -262,9 +365,11 @@ export function initializeMemoryViewer(rootElementId) {
 
     // Make the container resizable via layout manager if available
     if (window.layoutManager) {
-      window.layoutManager.makePanelResizable(containerElement.parentElement);
+      window.layoutManager.makePanelResizable(rootElement);
       console.log('Memory viewer panel made resizable');
     }
+
+    console.log('Enhanced memory viewer with navigation and search initialized');
 }
 
 /**
