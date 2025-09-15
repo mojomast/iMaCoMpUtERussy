@@ -10,8 +10,10 @@
 
 // Import breakpoints from debugger if available
 let breakpoints = new Set();
-if (typeof window !== 'undefined' && window.breakpoints) {
-    breakpoints = window.breakpoints;
+// Safe alias for browser `window` or Node `globalThis` to avoid ReferenceError
+const _win = (typeof window !== 'undefined') ? window : (typeof globalThis !== 'undefined' ? globalThis : undefined);
+if (_win && _win.breakpoints) {
+    breakpoints = _win.breakpoints;
 }
 
 import { iMaCoMpUtERussyMemory } from './memory.js';
@@ -825,8 +827,8 @@ export class iMaCoMpUtERussyCPU {
 
             // VUP (0xE2) - Video Update: Update video display (test expects this opcode)
             0xE2: () => {
-                if (window?.videoDisplay?.updateDisplay) {
-                    window.videoDisplay.updateDisplay();
+                if (_win?.videoDisplay?.updateDisplay) {
+                    _win.videoDisplay.updateDisplay();
                     this.setFlag('C', false); // Success
                 } else {
                     this.setFlag('C', true); // Display unavailable
@@ -1036,8 +1038,8 @@ export class iMaCoMpUtERussyCPU {
                     }
                     
                     // Trigger MCP event if available
-                    if (typeof window !== 'undefined' && window.mcpWebSocket?.readyState === WebSocket.OPEN) {
-                        window.mcpWebSocket.send(JSON.stringify({
+                    if (_win?.mcpWebSocket?.readyState === WebSocket.OPEN) {
+                        _win.mcpWebSocket.send(JSON.stringify({
                             type: 'video.patternLoaded',
                             data: { blockIndex, bufferStart: videoStart, size: bufferSize }
                         }));
@@ -1061,10 +1063,10 @@ export class iMaCoMpUtERussyCPU {
                     const color = this.A & 0x03; // Extract 2-bit color
                     this.memory.writeByte(addr, color);
                     // Trigger UI pixel update if available
-                    if (window?.videoDisplay?.updatePixel) {
+                    if (_win?.videoDisplay?.updatePixel) {
                         const x = offset % 32;
                         const y = Math.floor(offset / 32);
-                        window.videoDisplay.updatePixel(x, y, color);
+                        _win.videoDisplay.updatePixel(x, y, color);
                     }
                     this.setFlag('C', false);
                 } else {
@@ -1078,11 +1080,11 @@ export class iMaCoMpUtERussyCPU {
             // Triggers HTML5 canvas redraw with CRT effects
             // C flag: 0=success, 1=display unavailable
             0xAB: () => {
-                if (window?.videoDisplay?.updateDisplay) {
-                    window.videoDisplay.updateDisplay();
+                if (_win?.videoDisplay?.updateDisplay) {
+                    _win.videoDisplay.updateDisplay();
                     // Emit MCP event for remote monitoring
-                    if (window?.mcpWebSocket?.readyState === WebSocket.OPEN) {
-                        window.mcpWebSocket.send(JSON.stringify({
+                    if (_win?.mcpWebSocket?.readyState === WebSocket.OPEN) {
+                        _win.mcpWebSocket.send(JSON.stringify({
                             type: 'video.update',
                             data: { buffer: 0x0200, size: 1024 }
                         }));
@@ -1103,8 +1105,8 @@ export class iMaCoMpUtERussyCPU {
                 const delayMs = frames * 16.67; // 60Hz timing
                 setTimeout(() => {
                     // Optional completion event
-                    if (window?.mcpWebSocket?.readyState === WebSocket.OPEN) {
-                        window.mcpWebSocket.send(JSON.stringify({
+                    if (_win?.mcpWebSocket?.readyState === WebSocket.OPEN) {
+                        _win.mcpWebSocket.send(JSON.stringify({
                             type: 'video.delayComplete',
                             data: { frames }
                         }));
@@ -1123,13 +1125,13 @@ export class iMaCoMpUtERussyCPU {
                 console.log(`HLT: CPU halted at PC=0x${this.PC.toString(16).toUpperCase()}`);
                 
                 // Update UI status
-                if (typeof window?.updateStatus === 'function') {
-                    window.updateStatus('CPU HALTED - Program completed', 'success');
+                if (typeof _win?.updateStatus === 'function') {
+                    _win.updateStatus('CPU HALTED - Program completed', 'success');
                 }
                 
                 // MCP event
-                if (window?.mcpWebSocket?.readyState === WebSocket.OPEN) {
-                    window.mcpWebSocket.send(JSON.stringify({
+                if (_win?.mcpWebSocket?.readyState === WebSocket.OPEN) {
+                    _win.mcpWebSocket.send(JSON.stringify({
                         type: 'cpu.halt',
                         data: { finalPC: this.PC, registers: { A: this.A, X: this.X, Y: this.Y, SP: this.SP, P: this.P } }
                     }));
@@ -1149,11 +1151,11 @@ export class iMaCoMpUtERussyCPU {
         if (!this.running) return 0;
 
         // Check for breakpoint before executing instruction
-        if (typeof window !== 'undefined' && window.breakpoints && window.breakpoints.has(this.PC)) {
+        if (_win && _win.breakpoints && _win.breakpoints.has(this.PC)) {
             console.log(`Breakpoint hit at PC=0x${this.PC.toString(16).toUpperCase()}`);
             this.running = false; // Stop execution on breakpoint
-            if (typeof window.updateStatus === 'function') {
-                window.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
+            if (typeof _win.updateStatus === 'function') {
+                _win.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
             }
             return 0;
         }
@@ -1170,20 +1172,20 @@ export class iMaCoMpUtERussyCPU {
         const cycles = this.executeInstruction();
 
         // Update video display if executing in video ROM range 0x8000-0x9FFF
-        if (this.PC >= 0x8000 && this.PC <= 0x9FFF && window?.videoManager?.videoUpdate) {
+        if (this.PC >= 0x8000 && this.PC <= 0x9FFF && _win?.videoManager?.videoUpdate) {
             try {
-                window.videoManager.videoUpdate();
+                _win.videoManager.videoUpdate();
             } catch (error) {
                 console.warn('Video update during CPU step failed:', error);
             }
         }
 
         // Check for breakpoint after instruction execution
-        if (typeof window !== 'undefined' && window.breakpoints && window.breakpoints.has(this.PC)) {
+        if (_win && _win.breakpoints && _win.breakpoints.has(this.PC)) {
             console.log(`Breakpoint hit at PC=0x${this.PC.toString(16).toUpperCase()} after instruction`);
             this.running = false;
-            if (typeof window.updateStatus === 'function') {
-                window.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
+            if (typeof _win.updateStatus === 'function') {
+                _win.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
             }
             return cycles;
         }
@@ -1209,8 +1211,8 @@ export class iMaCoMpUtERussyCPU {
         this.PC = origin;
         
         // Log MCP event if applicable
-        if (viaMCP && window.logToMCP) {
-            window.logToMCP('info', `MCP Program Load: ${bytes.length} bytes at 0x${origin.toString(16).toUpperCase()}`, {
+        if (viaMCP && _win && _win.logToMCP) {
+            _win.logToMCP('info', `MCP Program Load: ${bytes.length} bytes at 0x${origin.toString(16).toUpperCase()}`, {
                 origin,
                 bytesLoaded: bytes.length,
                 sourceLength: source ? source.length : 0,
@@ -1219,8 +1221,8 @@ export class iMaCoMpUtERussyCPU {
         }
         
         // Trigger memory refresh if available
-        if (typeof window.refreshMemoryDisplay === 'function') {
-            window.refreshMemoryDisplay();
+        if (_win && typeof _win.refreshMemoryDisplay === 'function') {
+            _win.refreshMemoryDisplay();
         }
         
         console.log(`CPU: Loaded ${bytes.length} bytes at 0x${origin.toString(16).toUpperCase()} ${viaMCP ? '(via MCP)' : ''}`);
@@ -1240,8 +1242,8 @@ export class iMaCoMpUtERussyCPU {
         const stepsExecuted = this.run(maxSteps, true);
         
         // Log MCP event if applicable
-        if (viaMCP && window.logToMCP) {
-            window.logToMCP('info', `MCP Program Run: Executed ${stepsExecuted} steps`, {
+        if (viaMCP && _win && _win.logToMCP) {
+            _win.logToMCP('info', `MCP Program Run: Executed ${stepsExecuted} steps`, {
                 stepsExecuted,
                 startPC: this.PC - stepsExecuted,
                 currentPC: this.PC,
@@ -1250,11 +1252,11 @@ export class iMaCoMpUtERussyCPU {
         }
         
         // Refresh displays
-        if (typeof window.refreshDisplay === 'function') {
-            window.refreshDisplay();
+        if (_win && typeof _win.refreshDisplay === 'function') {
+            _win.refreshDisplay();
         }
-        if (typeof window.refreshMemoryDisplay === 'function') {
-            window.refreshMemoryDisplay();
+        if (_win && typeof _win.refreshMemoryDisplay === 'function') {
+            _win.refreshMemoryDisplay();
         }
         
         console.log(`CPU: Executed ${stepsExecuted} steps ${viaMCP ? '(via MCP)' : ''}`);
@@ -1295,8 +1297,8 @@ export class iMaCoMpUtERussyCPU {
                         // Accumulate cycles if tracking, but for simplicity just count instructions
                     } catch (error) {
                         console.error('CPU execution error:', error);
-                        if (window.logToMCP) {
-                            window.logToMCP('error', `CPU execution failed at step ${steps}: ${error.message}`);
+                        if (_win && _win.logToMCP) {
+                            _win.logToMCP('error', `CPU execution failed at step ${steps}: ${error.message}`);
                         }
                         this.running = false;
                         throw error;

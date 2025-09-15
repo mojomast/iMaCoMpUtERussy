@@ -23,6 +23,30 @@ function createDeveloperAdapters() {
     console.log('Initialized real CPU and Memory emulator components');
   }
 
+  // Server-side terminal buffer (captures writes to $F1 when no browser terminal is present)
+  // Some test runs execute in Node where window.terminal is not available; capture output here
+  // so that /mcp/terminal/read can return the program output.
+  const serverTerminalBuffer = [];
+  try {
+    // If memory exposes addWriteListener, use it to capture writes to $F1
+    if (typeof memory.addWriteListener === 'function') {
+      memory.addWriteListener((addr, value) => {
+        try {
+          if ((addr & 0xFFFF) === 0xF1) {
+            // push byte value into server-side buffer
+            serverTerminalBuffer.push(value & 0xFF);
+            // Also set input ready flag on memory so reads may see it if implemented
+            if (typeof memory.inputReadyFlag !== 'undefined') memory.inputReadyFlag = 1;
+          }
+        } catch (e) {
+          // swallow
+        }
+      });
+    }
+  } catch (e) {
+    // ignore
+  }
+
   return {
     cpu: {
       async reset(hardReset = false) {
@@ -89,8 +113,21 @@ function createDeveloperAdapters() {
 
       async run(maxSteps, stepDelay = 1, breakOnHalt = true) {
         try {
-          const stepsExecuted = cpu.run(maxSteps || 1000);
-          return {
+          // Defensive reset of CPU registers/flags before running, but preserve PC
+          // so that loadProgram can control start address.
+          try {
+            if (cpu) {
+              const preservedPC = cpu.PC;
+              if (typeof cpu.reset === 'function') cpu.reset();
+              cpu.PC = preservedPC;
+              cpu.running = true;
+              if (typeof cpu.setPendingIRQ === 'function') cpu.setPendingIRQ(false);
+            }
+          } catch (e) {
+            // ignore reset errors
+          }
+          const stepsExecuted = await cpu.run(maxSteps || 1000);
+          const result = {
             success: true,
             data: {
               stepsExecuted: stepsExecuted,
@@ -105,6 +142,22 @@ function createDeveloperAdapters() {
               executionTrace: [] // Could implement later
             }
           };
+          // Temporary debug log to help diagnose empty response seen by client
+          try {
+            const debugPath = path.join(__dirname, '..', 'logs', 'adapter-debug.log');
+            const logLine = `[${new Date().toISOString()}] DEBUG adapter.cpu.run result: ` + JSON.stringify(result) + '\n';
+            // Ensure logs directory exists
+            const logsDir = path.dirname(debugPath);
+            if (!fs.existsSync(logsDir)) {
+              fs.mkdirSync(logsDir, { recursive: true });
+            }
+            fs.appendFileSync(debugPath, logLine, { encoding: 'utf8' });
+          } catch (dbgErr) {
+            // swallow logging errors to avoid affecting adapter behavior
+            console.error('adapter debug log failed:', dbgErr && dbgErr.message ? dbgErr.message : dbgErr);
+          }
+
+          return result;
         } catch (error) {
           console.error('CPU run error:', error);
           throw error;
@@ -158,6 +211,22 @@ function createDeveloperAdapters() {
       async read(address, bytes = 1) {
         try {
           if (bytes === 1) {
+            // If reading keyboard input register $F0, prefer server-side buffer if available
+            if ((address & 0xFFFF) === 0xF0 && serverTerminalBuffer.length > 0) {
+              const v = serverTerminalBuffer.shift();
+              // clear input ready flag when buffer empties
+              if (serverTerminalBuffer.length === 0 && typeof memory.inputReadyFlag !== 'undefined') memory.inputReadyFlag = 0;
+              return {
+                success: true,
+                data: {
+                  address,
+                  bytes: 1,
+                  value: v,
+                  hexValue: v.toString(16).padStart(2, '0').toUpperCase()
+                }
+              };
+            }
+
             const value = memory.readByte(address);
             return {
               success: true,
@@ -226,6 +295,27 @@ function createDeveloperAdapters() {
         try {
           // js/memory.loadProgram expects (addr, byteArray)
           const bytesLoaded = memory.loadProgram(startAddress, new Uint8Array(bytecode));
+          // Reset CPU state and set PC to start of loaded program to ensure fresh execution
+          try {
+            if (cpu && typeof cpu.reset === 'function') {
+              cpu.reset();
+            }
+            if (cpu) {
+              cpu.PC = startAddress;
+              cpu.running = true;
+              if (typeof cpu.setPendingIRQ === 'function') cpu.setPendingIRQ(false);
+            }
+          } catch (resetErr) {
+            console.warn('Failed to reset CPU during loadProgram:', resetErr && resetErr.message ? resetErr.message : resetErr);
+          }
+          // Debug: record CPU state after reset/load
+          try {
+            const debugPath = path.join(__dirname, '..', 'logs', 'adapter-debug.log');
+            const stateLine = `[${new Date().toISOString()}] DEBUG adapter.loadProgram cpuStateAfterReset: ` + JSON.stringify({ pc: cpu && cpu.PC, a: cpu && cpu.A, x: cpu && cpu.X, y: cpu && cpu.Y, running: cpu && cpu.running }) + '\n';
+            fs.appendFileSync(debugPath, stateLine, { encoding: 'utf8' });
+          } catch (e) {
+            // ignore logging errors
+          }
           return {
             success: true,
             data: {

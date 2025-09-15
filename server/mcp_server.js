@@ -303,7 +303,13 @@ function loadSchemas() {
             const memoryBuffer = new Uint8Array(bytesToSave);
             for (let i = 0; i < bytesToSave; i++) {
               const addr = (validatedStart + i) & 0xFFFF;
-              memoryBuffer[i] = adapters.memory.read(addr, 1).data.value & 0xFF;
+              try {
+                const rr = await adapters.memory.read(addr, 1);
+                const v = (rr && rr.data && typeof rr.data.value === 'number') ? rr.data.value & 0xFF : 0;
+                memoryBuffer[i] = v;
+              } catch (e) {
+                memoryBuffer[i] = 0;
+              }
             }
 
             // Save to file
@@ -521,13 +527,30 @@ function initializeAdapters() {
 }
 
 // Utility function to validate request/response
+// NOTE: AJV may mutate the input object (e.g., remove additional properties). To avoid
+// accidental mutation of the original request/response objects (which caused empty
+// response bodies to be returned), validate a structured clone instead.
 function validate(schemaKey, data, type = 'request') {
   const validator = compiledValidators[schemaKey];
   if (!validator) {
     throw new MCPError('INTERNAL_ERROR', `Schema not found: ${schemaKey}`);
   }
 
-  const valid = validator(data);
+  // Create a safe clone. Prefer structuredClone when available.
+  let clone;
+  try {
+    if (typeof structuredClone === 'function') {
+      clone = structuredClone(data);
+    } else {
+      clone = JSON.parse(JSON.stringify(data));
+    }
+  } catch (e) {
+    // Fallback: validate original if cloning fails, but log a warning
+    logger.warn('Failed to clone object for validation; validating original object', { schemaKey, error: e && e.message });
+    clone = data;
+  }
+
+  const valid = validator(clone);
   if (!valid) {
     return { success: false, data, errors: validator.errors };
   }
@@ -593,8 +616,13 @@ app.post('/mcp/memory/read', authenticateAPIKey, moderateLimiter, asyncHandler(a
     const byteArray = [];
     for (let i = 0; i < validatedSize; i++) {
       const addr = (validatedAddress + i) & 0xFFFF;
-      const readResult = await adapters.memory.read(addr, 1);
-      byteArray.push(readResult.data.value & 0xFF);
+      try {
+        const readResult = await adapters.memory.read(addr, 1);
+        const v = (readResult && readResult.data && typeof readResult.data.value === 'number') ? readResult.data.value & 0xFF : 0;
+        byteArray.push(v);
+      } catch (e) {
+        byteArray.push(0);
+      }
     }
 
     const result = {
@@ -748,18 +776,36 @@ app.post('/mcp/cpu/run', retryHandler(3, 1000, 'cpu'), authenticateAPIKey, inten
 
     const result = await adapters.cpu.run(validatedMaxSteps, validatedStepDelay, breakOnHalt);
 
-    // Broadcast CPU run event
-    if (typeof broadcastEvent === 'function') {
-      broadcastEvent('cpu.run', { stepsExecuted: result.stepsExecuted, halted: result.halted, finalPC: result.finalPC });
+    // If adapter already returned the canonical { success: boolean, data: {...} } shape,
+    // prefer returning it directly to avoid double-wrapping. Otherwise, wrap with
+    // successResponse(result) for backwards compatibility.
+    let finalResponse;
+    if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'success') && Object.prototype.hasOwnProperty.call(result, 'data')) {
+      finalResponse = result;
+    } else {
+      finalResponse = successResponse(result);
     }
 
-    // Validate response against schema
-    const responseValidation = validate('cpu.run.response', { data: result });
+    // Log adapter return and normalize payload for broadcasting
+    try {
+      const payload = (finalResponse && finalResponse.data) ? finalResponse.data : finalResponse;
+      logger.debug('cpu.run adapter result', { result, payload });
+
+      // Broadcast CPU run event using normalized payload
+      if (typeof broadcastEvent === 'function') {
+        broadcastEvent('cpu.run', { stepsExecuted: payload.stepsExecuted, halted: payload.halted, finalPC: payload.finalPC || (payload.finalState && payload.finalState.pc) });
+      }
+    } catch (logErr) {
+      logger.error('Failed to log/normalize cpu.run result', { error: logErr && logErr.message });
+    }
+
+    // Validate final response against schema
+    const responseValidation = validate('cpu.run.response', finalResponse);
     if (!responseValidation.success) {
       logger.warn('CPU run response validation failed', { errors: responseValidation.errors });
     }
 
-    res.json(successResponse(result));
+    res.json(finalResponse);
   } catch (error) {
     const stdError = ErrorHandler.standardizeError(error, 'mcp_server::cpu_run');
     if (error instanceof MCPError) {
@@ -1534,8 +1580,13 @@ app.post('/mcp/debug/memoryView', authenticateAPIKey, intenseLimiter, asyncHandl
       const bytes = [];
       for (let i = 0; i < validatedSize; i++) {
         const addr = validatedAddress + i;
-        const result = await adapters.memory.read(addr, 1);
-        bytes.push(result.data.value);
+        try {
+          const result = await adapters.memory.read(addr, 1);
+          const v = (result && result.data && typeof result.data.value === 'number') ? result.data.value & 0xFF : 0;
+          bytes.push(v);
+        } catch (e) {
+          bytes.push(0);
+        }
 
         // Broadcast memory read event for debug view (optional, for logging)
         if (i === 0 && typeof broadcastEvent === 'function') {
@@ -1720,13 +1771,66 @@ app.get('/mcp/terminal/read', authenticateAPIKey, moderateLimiter, asyncHandler(
 
    // Read until buffer is empty (up to reasonable limit)
    const maxRead = 256; // Same as keyboard buffer size
-   for (let i = 0; i < maxRead; i++) {
-     const charCode = adapters.memory.read(0xF0, 1).data.value;
-     if (charCode === 0) break; // No more input
-     inputBuffer.push(String.fromCharCode(charCode));
-     bytesRead++;
-     hasInput = true;
-   }
+  for (let i = 0; i < maxRead; i++) {
+    // adapters.memory.read may be async or sync depending on adapter implementation.
+    // Support multiple return shapes: number, { value }, { data: { value } }, { success, data: { value } }
+    let raw = null;
+    try {
+      raw = adapters.memory.read(0xF0, 1);
+    } catch (e) {
+      // If adapter.read throws synchronously, stop reading
+      break;
+    }
+
+    let readResult = raw;
+    if (readResult && typeof readResult.then === 'function') {
+      try {
+        readResult = await readResult;
+      } catch (e) {
+        // adapter promise rejected -> stop reading
+        break;
+      }
+    }
+
+    // Debug: if readResult doesn't match expected shapes, log it to help diagnose undefined.value
+    if (!readResult || (typeof readResult !== 'number' && !('value' in readResult) && !(readResult.data && 'value' in readResult.data) && !(readResult.success && readResult.data && 'value' in readResult.data))) {
+      try {
+        logger.warn('terminal.read - unexpected adapter.memory.read shape', { raw: readResult });
+      } catch (e) {
+        // ignore logging errors
+      }
+    }
+
+    // Normalize the readResult into a safe container to avoid accessing properties on undefined
+    let charCode = 0;
+    try {
+      if (readResult == null) {
+        charCode = 0;
+      } else if (typeof readResult === 'number') {
+        charCode = readResult;
+      } else {
+        // Prefer direct 'value', then data.value, then nested success/data/value
+        const maybeValue = (readResult && Object.prototype.hasOwnProperty.call(readResult, 'value')) ? readResult.value
+          : (readResult && readResult.data && Object.prototype.hasOwnProperty.call(readResult.data, 'value')) ? readResult.data.value
+          : (readResult && readResult.success && readResult.data && Object.prototype.hasOwnProperty.call(readResult.data, 'value')) ? readResult.data.value
+          : undefined;
+
+        if (typeof maybeValue === 'number') {
+          charCode = maybeValue;
+        } else {
+          charCode = 0;
+        }
+      }
+    } catch (e) {
+      // Defensive fallback - do not allow exception here to bubble up
+      charCode = 0;
+    }
+
+    if (charCode === 0) break; // No more input
+    inputBuffer.push(String.fromCharCode(charCode));
+    bytesRead++;
+    hasInput = true;
+  }
 
    const input = inputBuffer.join('');
 

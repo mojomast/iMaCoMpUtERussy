@@ -5,7 +5,7 @@
 
 import fetch from 'node-fetch';
 
-const BASE = process.env.MCP_BASE || 'http://localhost:8001';
+const BASE = process.env.MCP_BASE || 'http://localhost:3000';
 const API_KEY = process.env.MCP_API_KEY || 'default-api-key-change-in-production';
 
 async function postLoadProgram() {
