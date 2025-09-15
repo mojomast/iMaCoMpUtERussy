@@ -1,6 +1,27 @@
 #!/usr/bin/env node
 
-/* global logger */
+/* local logger for error handling module */
+import winston from 'winston';
+
+// Create a logger for this module if a global one isn't provided
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'mcp-errors' },
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    }),
+    new winston.transports.File({ filename: 'logs/mcp-errors.log', maxsize: 5 * 1024 * 1024, maxFiles: 3 })
+  ]
+});
 
 /**
  * MCP Error Handling Module
@@ -335,8 +356,18 @@ export function retryHandler(maxRetries = 3, baseDelay = 1000, serviceName = 'de
         }
       };
 
-      // Call the next middleware with error handling
-      next(nextWithErrorHandling);
+      // Call the next middleware. Express's next() does not accept a callback
+      // function as an argument; passing a function becomes an error object.
+      // Instead, invoke next() to continue the middleware chain and resolve
+      // the protected operation immediately. Errors from downstream middleware
+      // will be propagated via the normal Express error handling path.
+      try {
+        next();
+        resolve();
+      } catch (err) {
+        // If next() synchronously throws (rare), treat as an error
+        nextWithErrorHandling(err);
+      }
     });
 
     try {

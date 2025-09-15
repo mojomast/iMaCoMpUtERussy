@@ -28,6 +28,9 @@
     "build": "npm run setup",
     "samples": "echo 'Sample programs available in samples/ directory'"
   },
+  "bin": {
+    "mcp-smoke-test": "scripts/smoke-test.js"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/kyledurepos/imacomputerussy"

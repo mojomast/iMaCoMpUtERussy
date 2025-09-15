@@ -174,9 +174,16 @@ ajv.addFormat('date-time', {
 const schemasDir = path.join(__dirname, '../docs/mcp_schemas');
 const compiledValidators = {};
 
+// Prevent noisy repeated schema-load logs by tracking whether schemas were loaded recently
+let _schemasLoadedOnce = false;
 function loadSchemas() {
   try {
-    logger.info('Loading MCP schemas', { schemasDir, count: 'unknown' });
+    if (!_schemasLoadedOnce) {
+      logger.info('Loading MCP schemas', { schemasDir, count: 'unknown' });
+      _schemasLoadedOnce = true;
+    } else {
+      logger.debug('Skipping repeated schema load log (already loaded)', { schemasDir });
+    }
 
     // Load individual schema files
     const files = fs.readdirSync(schemasDir).filter(f => f.endsWith('.json'));
@@ -217,26 +224,26 @@ function loadSchemas() {
           }
 
           try {
-            const { address, value, size } = req.body;
+            const { address, value, bytes } = req.body;
             const validatedAddress = validateMemoryAddress(address);
             const validatedValue = validateColor(value);
-            const validatedSize = validateMemorySize(size || 1);
+            const validatedSize = validateMemorySize(bytes || 1);
 
             logger.info('Memory write request processed', {
               endpoint: 'POST /mcp/memory/write',
               address: `0x${validatedAddress.toString(16)}`,
               value: `0x${validatedValue.toString(16)}`,
-              size: validatedSize
+              bytes: validatedSize
             });
 
-            adapters.memory.write(validatedAddress, validatedValue, validatedSize);
+            await adapters.memory.write(validatedAddress, validatedValue, validatedSize);
 
             // Broadcast memory write event
             if (typeof broadcastEvent === 'function') {
               broadcastEvent('memory.write', { address: validatedAddress, value: validatedValue, size: validatedSize });
             }
 
-            const result = { address: validatedAddress, value: validatedValue, size: validatedSize };
+            const result = { address: validatedAddress, value: validatedValue, bytes: validatedSize };
             res.json(successResponse(result));
           } catch (error) {
             const stdError = ErrorHandler.standardizeError(error, 'mcp_server::memory_write');
@@ -568,9 +575,9 @@ app.post('/mcp/memory/read', authenticateAPIKey, moderateLimiter, asyncHandler(a
   }
 
   try {
-    const { address, size } = req.body;
+    const { address, bytes } = req.body;
     const validatedAddress = validateMemoryAddress(address);
-    const validatedSize = validateMemorySize(size || 1);
+    const validatedSize = validateMemorySize(bytes || 1);
 
     // Check bounds
     if (validatedAddress + validatedSize - 1 > 0xFFFF) {
@@ -583,17 +590,17 @@ app.post('/mcp/memory/read', authenticateAPIKey, moderateLimiter, asyncHandler(a
       size: validatedSize
     });
 
-    const bytes = [];
+    const byteArray = [];
     for (let i = 0; i < validatedSize; i++) {
       const addr = (validatedAddress + i) & 0xFFFF;
-      const readResult = adapters.memory.read(addr, 1);
-      bytes.push(readResult.data.value & 0xFF);
+      const readResult = await adapters.memory.read(addr, 1);
+      byteArray.push(readResult.data.value & 0xFF);
     }
 
     const result = {
       address: validatedAddress,
-      size: validatedSize,
-      bytes: bytes,
+      bytes: validatedSize,
+      byteArray: byteArray,
       endAddress: validatedAddress + validatedSize - 1
     };
 
@@ -626,19 +633,20 @@ app.post('/mcp/memory/loadProgram', authenticateAPIKey, moderateLimiter, asyncHa
   }
 
   try {
-    const { programName, startAddress, assembled } = req.body;
-    const sanitizedName = sanitizeProgramName(programName);
-    const validatedAddress = validateMemoryAddress(startAddress || 0x0600);
-    validateBoolean(assembled, 'assembled');
+    const { bytecode, startAddress } = req.body;
+    const validatedAddress = validateMemoryAddress(startAddress);
+    // Validate bytecode as array of integers 0-255
+    if (!Array.isArray(bytecode) || !bytecode.every(b => Number.isInteger(b) && b >= 0 && b <= 255)) {
+      throw new MCPError('INVALID_REQUEST', 'Bytecode must be an array of integers between 0 and 255');
+    }
 
     logger.info('Memory loadProgram request processed', {
       endpoint: 'POST /mcp/memory/loadProgram',
-      programName: sanitizedName,
-      startAddress: `0x${validatedAddress.toString(16)}`,
-      assembled
+      bytecodeLength: bytecode.length,
+      startAddress: `0x${validatedAddress.toString(16)}`
     });
 
-    const result = await adapters.programs.loadProgramFromSource(sanitizedName, validatedAddress, assembled);
+    const result = await adapters.memory.loadProgram(bytecode, validatedAddress);
 
     // Validate response
     const responseValidation = validate('memory.loadProgram.response', result);
@@ -649,8 +657,7 @@ app.post('/mcp/memory/loadProgram', authenticateAPIKey, moderateLimiter, asyncHa
     // Broadcast load event
     if (typeof broadcastEvent === 'function') {
       broadcastEvent('memory.loadProgram', {
-        programName: sanitizedName,
-        bytesLoaded: result.bytesLoaded || 0,
+        bytesLoaded: (result && result.data && result.data.bytesLoaded) || 0,
         startAddress: validatedAddress
       });
     }
@@ -677,29 +684,39 @@ app.post('/mcp/cpu/step', retryHandler(3, 1000, 'cpu'), authenticateAPIKey, inte
 
   try {
     const validatedTimeout = validateTimeout(req.body.timeout);
-    const result = adapters.cpu.step(validatedTimeout);
+    // adapters.cpu.step may return a wrapped { success, data } or raw result
+    const result = await adapters.cpu.step(validatedTimeout);
+    const payload = (result && result.data) ? result.data : result;
 
     // Broadcast CPU step event
     if (typeof broadcastEvent === 'function') {
-      broadcastEvent('cpu.step', { pc: result.pc, instruction: result.instruction, registers: result.registers });
+      broadcastEvent('cpu.step', { pc: payload.pc, instruction: payload.instruction, registers: payload.cpuState || payload.registers });
     }
 
     logger.info('CPU step executed successfully', {
       endpoint: 'POST /mcp/cpu/step',
-      pc: `0x${result.pc.toString(16)}`,
-      instruction: result.instruction,
+      pc: `0x${(payload.pc || 0).toString(16)}`,
+      instruction: payload.instruction,
       timeoutMs: validatedTimeout,
       circuitState: circuitBreaker.getServiceBreaker('cpu').state
     });
 
-    // Validate response against schema
-    const responseValidation = validate('cpu.step.response', { data: result });
+    // Validate response against schema - pass adapter result (wrapped) when available
+    const responseValidation = validate('cpu.step.response', result && result.data ? result : { success: true, data: payload });
     if (!responseValidation.success) {
       throw new MCPError('INTERNAL_ERROR', 'Response validation failed', { validationErrors: responseValidation.errors }, 500, false, 0, 0, 'cpu', 5000);
     }
 
     res.json(successResponse(result));
   } catch (error) {
+    // Log full error details for debugging
+    try {
+      logger.error('cpu.step handler caught error', { message: error && error.message, stack: error && error.stack });
+      console.error('cpu.step handler caught error:', error);
+    } catch (logErr) {
+      console.error('Error while logging cpu.step error:', logErr);
+    }
+
     const stdError = ErrorHandler.standardizeError(error, 'mcp_server::cpu_step');
     if (error instanceof MCPError) {
       throw error;

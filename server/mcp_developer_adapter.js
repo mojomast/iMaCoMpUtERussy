@@ -224,7 +224,8 @@ function createDeveloperAdapters() {
 
       async loadProgram(bytecode, startAddress, validate = true) {
         try {
-          const bytesLoaded = memory.loadProgram(new Uint8Array(bytecode), startAddress);
+          // js/memory.loadProgram expects (addr, byteArray)
+          const bytesLoaded = memory.loadProgram(startAddress, new Uint8Array(bytecode));
           return {
             success: true,
             data: {
@@ -523,6 +524,19 @@ function createDeveloperAdapters() {
     },
 
     programs: {
+      async list() {
+        try {
+          const samplesDir = path.join(__dirname, '..', 'samples');
+          if (!fs.existsSync(samplesDir)) return { success: true, data: [] };
+          const files = fs.readdirSync(samplesDir).filter(f => f.endsWith('.asm'));
+          const programs = files.map(f => path.parse(f).name);
+          return { success: true, data: programs };
+        } catch (error) {
+          console.error('Programs list error:', error);
+          throw error;
+        }
+      },
+
       async loadSample(sampleName, assembled = true, resetCPU = true) {
         try {
           const samplesDir = path.join(__dirname, '..', 'samples');
@@ -538,7 +552,8 @@ function createDeveloperAdapters() {
           if (assembled) {
             bytecode = assemble(source, { origin: 0x0600 });
             const loadAddress = 0x0600;
-            memory.loadProgram(bytecode, loadAddress);
+            // memory.loadProgram expects (addr, byteArray)
+            memory.loadProgram(loadAddress, new Uint8Array(bytecode));
 
             if (resetCPU) {
               cpu.reset();
@@ -609,7 +624,8 @@ function createDeveloperAdapters() {
 
           if (assemble && autoLoad) {
             const bytecode = assemble(content, { origin: 0x0600 });
-            memory.loadProgram(bytecode, 0x0600);
+            // memory.loadProgram expects (addr, byteArray)
+            memory.loadProgram(0x0600, new Uint8Array(bytecode));
             cpu.reset();
             cpu.PC = 0x0600;
           }
