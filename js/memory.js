@@ -145,8 +145,30 @@ export class iMaCoMpUtERussyMemory {
       },
       write: (value) => {
         // Output character to terminal if available
-        if (typeof window !== 'undefined' && window.terminal && window.terminal.write) {
-          window.terminal.write(String.fromCharCode(value & 0xFF));
+        try {
+          // Prefer a server-side terminal helper installed on globalThis
+          if (typeof globalThis !== 'undefined' && typeof globalThis.__SERVER_TERMINAL !== 'undefined' && globalThis.__SERVER_TERMINAL && typeof globalThis.__SERVER_TERMINAL.write === 'function') {
+            try { globalThis.__SERVER_TERMINAL.write(value & 0xFF); } catch (e) {}
+            return;
+          }
+
+          if (typeof window !== 'undefined' && window.terminal && window.terminal.write) {
+            window.terminal.write(String.fromCharCode(value & 0xFF));
+            return;
+          }
+
+          // If running under Node, attempt to require the server terminal helper (js -> ../server)
+          try {
+            const term = require('../server/terminal.js');
+            if (term && typeof term.write === 'function') {
+              try { term.write(value & 0xFF); } catch (e) {}
+              return;
+            }
+          } catch (e) {
+            // ignore require errors
+          }
+        } catch (e) {
+          // swallow
         }
       }
     });
@@ -438,8 +460,27 @@ export class iMaCoMpUtERussyMemory {
     // Check for MMIO handler first
     const handler = this.mmioHandlers.get(maskedAddr);
     if (handler && typeof handler.write === 'function') {
+      // Debug log for MMIO writes (console)
+      try { if (maskedAddr >= 0xF0) console.log(`[memory] writeByte MMIO addr=0x${maskedAddr.toString(16)} val=0x${maskedValue.toString(16)}`); } catch(e){}
+  // Persistent debug log via global hook (installed by server adapter) to avoid ESM require
+  try { if (typeof globalThis !== 'undefined' && typeof globalThis.__MMIO_LOG === 'function') globalThis.__MMIO_LOG(maskedAddr, maskedValue); } catch (e) {}
       handler.write(maskedValue);
       this._notifyWrite(maskedAddr, maskedValue);
+      // Best-effort: also notify any global server terminal helper or fallback buffer
+      try {
+        if (typeof globalThis !== 'undefined') {
+          try {
+            if (globalThis.__SERVER_TERMINAL && typeof globalThis.__SERVER_TERMINAL.write === 'function') {
+              try { globalThis.__SERVER_TERMINAL.write(maskedValue); } catch (e) {}
+            }
+          } catch (e) {}
+          // Ensure a fallback buffer exists so adapter read() can inspect program output
+          if (!globalThis.__SERVER_TERMINAL_BUFFER) globalThis.__SERVER_TERMINAL_BUFFER = [];
+          try { globalThis.__SERVER_TERMINAL_BUFFER.push(maskedValue & 0xFF); } catch (e) {}
+        }
+      } catch (e) {
+        // swallow
+      }
       // For MMIO, also mirror to low I/O if applicable
       if (maskedAddr >= 0xF0 && maskedAddr <= 0xFF) {
         const mirrorAddr = (maskedAddr - 0xF0) & 0x0F;
@@ -527,9 +568,42 @@ export class iMaCoMpUtERussyMemory {
       // Read-only, ignore
       return;
     } else if (maskedAddr === 0xF1) {
-      // Inline terminal write
-      if (typeof window !== 'undefined' && window.terminal && window.terminal.write) {
-        window.terminal.write(String.fromCharCode(maskedValue));
+      // Inline terminal write - ensure server-side terminal helper gets the byte
+      // Also append a persistent MMIO log line so we can trace writes from inner loops
+      try {
+  try { if (maskedAddr >= 0xF0) console.log(`[memory] writeByteUnchecked MMIO addr=0x${maskedAddr.toString(16)} val=0x${maskedValue.toString(16)}`); } catch(e){}
+  try { if (typeof globalThis !== 'undefined' && typeof globalThis.__MMIO_LOG === 'function') globalThis.__MMIO_LOG(maskedAddr, maskedValue); } catch (e) {}
+      } catch (e) {
+        // swallow
+      }
+      try {
+        if (typeof window !== 'undefined' && window.terminal && window.terminal.write) {
+          window.terminal.write(String.fromCharCode(maskedValue));
+        } else {
+          // If running under Node, try to require server-side terminal helper
+          try {
+            const t = require('../server/terminal.js');
+            if (t && typeof t.write === 'function') t.write(maskedValue);
+          } catch (e) {
+            // Fallback: no-op
+          }
+        }
+      } catch (e) {
+        // swallow
+      }
+      // Also ensure server terminal helper/buffer capture for unchecked fast path
+      try {
+        if (typeof globalThis !== 'undefined') {
+          try {
+            if (globalThis.__SERVER_TERMINAL && typeof globalThis.__SERVER_TERMINAL.write === 'function') {
+              try { globalThis.__SERVER_TERMINAL.write(maskedValue); } catch (e) {}
+            }
+          } catch (e) {}
+          if (!globalThis.__SERVER_TERMINAL_BUFFER) globalThis.__SERVER_TERMINAL_BUFFER = [];
+          try { globalThis.__SERVER_TERMINAL_BUFFER.push(maskedValue & 0xFF); } catch (e) {}
+        }
+      } catch (e) {
+        // swallow
       }
       return;
     } else if (maskedAddr === 0xF2) {

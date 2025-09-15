@@ -227,6 +227,11 @@ class MCPTestRunner {
         correct: outputCorrect
       });
 
+      // Treat incorrect output as a failed step so final report.success becomes false
+      if (!outputCorrect) {
+        return { success: false, terminalData, outputCorrect };
+      }
+
       return { success: true, terminalData, outputCorrect };
     }
 

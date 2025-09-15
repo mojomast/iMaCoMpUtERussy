@@ -23,10 +23,59 @@ function createDeveloperAdapters() {
     console.log('Initialized real CPU and Memory emulator components');
   }
 
+  // Install a global MMIO logging hook usable by ESM modules that cannot require('fs')
+  try {
+    if (typeof globalThis.__MMIO_LOG !== 'function') {
+      const logsDir = path.join(__dirname, '..', 'logs');
+      if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+      globalThis.__MMIO_LOG = (addr, val) => {
+        try {
+          const p = path.join(logsDir, 'mmio-debug.log');
+          const line = `${new Date().toISOString()} MMIO addr=0x${(addr & 0xFFFF).toString(16)} val=0x${(val & 0xFF).toString(16)}\n`;
+          fs.appendFileSync(p, line, { encoding: 'utf8' });
+        } catch (e) {
+          // swallow
+        }
+      };
+    }
+  } catch (e) {
+    // ignore global hook installation errors
+  }
+
+  // Expose server terminal helper globally so low-level memory code can call it
+  try {
+    if (typeof globalThis !== 'undefined' && typeof globalThis.__SERVER_TERMINAL === 'undefined') {
+      try {
+        globalThis.__SERVER_TERMINAL = require('./terminal.js');
+      } catch (e) {
+        // ignore if require fails; adapter will still use its local getServerTerminal
+      }
+    }
+  } catch (e) {
+    // swallow
+  }
+
   // Server-side terminal buffer (captures writes to $F1 when no browser terminal is present)
   // Some test runs execute in Node where window.terminal is not available; capture output here
   // so that /mcp/terminal/read can return the program output.
   const serverTerminalBuffer = [];
+  // Terminal helper for server-side terminal capture (shared access)
+  // Lazily require to avoid circular deps in some environments
+  let serverTerminal = null;
+  function getServerTerminal() {
+    if (!serverTerminal) {
+      try {
+        serverTerminal = require('./terminal.js');
+      } catch (e) {
+        // Fallback to inline minimal terminal shim
+        serverTerminal = {
+          write: (v) => { serverTerminalBuffer.push(typeof v === 'number' ? v & 0xFF : String(v).charCodeAt(0) & 0xFF); },
+          readAll: () => serverTerminalBuffer.splice(0, serverTerminalBuffer.length)
+        };
+      }
+    }
+    return serverTerminal;
+  }
   try {
     // If memory exposes addWriteListener, use it to capture writes to $F1
     if (typeof memory.addWriteListener === 'function') {
@@ -211,20 +260,39 @@ function createDeveloperAdapters() {
       async read(address, bytes = 1) {
         try {
           if (bytes === 1) {
-            // If reading keyboard input register $F0, prefer server-side buffer if available
-            if ((address & 0xFFFF) === 0xF0 && serverTerminalBuffer.length > 0) {
-              const v = serverTerminalBuffer.shift();
-              // clear input ready flag when buffer empties
-              if (serverTerminalBuffer.length === 0 && typeof memory.inputReadyFlag !== 'undefined') memory.inputReadyFlag = 0;
-              return {
-                success: true,
-                data: {
-                  address,
-                  bytes: 1,
-                  value: v,
-                  hexValue: v.toString(16).padStart(2, '0').toUpperCase()
+            // If reading keyboard input register $F0, prefer server-side terminal helper if available
+            const addr16 = address & 0xFFFF;
+            if (addr16 === 0xF0) {
+              try {
+                const t = getServerTerminal();
+                if (t && typeof t.peekBytes === 'function') {
+                  const bytesAvail = t.peekBytes();
+                  if (bytesAvail && bytesAvail.length > 0) {
+                    const v = bytesAvail.shift();
+                    // consume via readAll by rebuilding buffer (peek returned copy) - fallback to adapter buffer
+                    try {
+                      // If terminal exposes readAll, use that to consume
+                      if (typeof t.readAll === 'function') {
+                        const s = t.readAll();
+                        const consumed = s.length > 0 ? s.charCodeAt(0) : v;
+                        if (typeof memory.inputReadyFlag !== 'undefined') memory.inputReadyFlag = t.peekBytes().length > 0 ? 1 : 0;
+                        return { success: true, data: { address, bytes: 1, value: consumed, hexValue: (consumed & 0xFF).toString(16).padStart(2, '0').toUpperCase() } };
+                      }
+                    } catch (e) {
+                      // ignore, fall back
+                    }
+                  }
                 }
-              };
+              } catch (e) {
+                // ignore terminal helper errors
+              }
+
+              // Fallback: adapter local buffer
+              if (serverTerminalBuffer.length > 0) {
+                const v = serverTerminalBuffer.shift();
+                if (serverTerminalBuffer.length === 0 && typeof memory.inputReadyFlag !== 'undefined') memory.inputReadyFlag = 0;
+                return { success: true, data: { address, bytes: 1, value: v, hexValue: v.toString(16).padStart(2, '0').toUpperCase() } };
+              }
             }
 
             const value = memory.readByte(address);
@@ -267,12 +335,37 @@ function createDeveloperAdapters() {
           const previous = bytes === 1 ? memory.readByte(address) : null;
 
           if (bytes === 1) {
+            // Debug: log MMIO-range writes
+            try { if ((address & 0xFFFF) >= 0xF0) console.log(`[adapter] memory.write addr=0x${(address&0xFFFF).toString(16)} value=0x${(value&0xFF).toString(16)}`); } catch(e){}
             memory.writeByte(address, value & 0xFF);
+            // If this is a terminal output write ($F1), capture on server terminal helper
+            try {
+              if ((address & 0xFFFF) === 0xF1) {
+                const term = getServerTerminal();
+                if (term && typeof term.write === 'function') {
+                  try { term.write(value & 0xFF); } catch(e){}
+                } else {
+                  serverTerminalBuffer.push(value & 0xFF);
+                }
+                if (typeof memory.inputReadyFlag !== 'undefined') memory.inputReadyFlag = 1;
+              }
+            } catch (e) {
+              // swallow
+            }
           } else {
             // Multi-byte write
             for (let i = 0; i < bytes; i++) {
               const byte = (value >> (i * 8)) & 0xFF;
               memory.writeByte(address + i, byte);
+              // Capture multi-byte writes if they overlap $F1
+              try {
+                if (((address + i) & 0xFFFF) === 0xF1) {
+                  serverTerminalBuffer.push(byte & 0xFF);
+                  if (typeof memory.inputReadyFlag !== 'undefined') memory.inputReadyFlag = 1;
+                }
+              } catch (e) {
+                // swallow
+              }
             }
           }
 
@@ -586,7 +679,7 @@ function createDeveloperAdapters() {
               startAddress: 0x0200,
               endAddress: 0x05FF,
               color,
-              cleared: true
+              bytesCleared: 0x400
             }
           };
         } catch (error) {
@@ -594,23 +687,6 @@ function createDeveloperAdapters() {
           throw error;
         }
       },
-
-      async update() {
-        // Video update - could trigger CPU instruction to update display
-        try {
-          // This would need to trigger VUP instruction or similar
-          return {
-            success: true,
-            data: {
-              displayUpdated: true,
-              updateTriggered: true
-            }
-          };
-        } catch (error) {
-          console.error('Video update error:', error);
-          throw error;
-        }
-      }
     },
 
     programs: {

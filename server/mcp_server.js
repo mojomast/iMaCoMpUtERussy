@@ -1764,8 +1764,8 @@ app.get('/mcp/terminal/read', authenticateAPIKey, moderateLimiter, asyncHandler(
      endpoint: 'GET /mcp/terminal/read'
    });
 
-   // Read from keyboard input buffer ($F0)
-   const inputBuffer = [];
+  // Read from keyboard input buffer ($F0) and also consult server-side terminal output helper for program output
+  const inputBuffer = [];
    let hasInput = false;
    let bytesRead = 0;
 
@@ -1834,6 +1834,31 @@ app.get('/mcp/terminal/read', authenticateAPIKey, moderateLimiter, asyncHandler(
 
    const input = inputBuffer.join('');
 
+  // If no keyboard input and server-side terminal helper exists, return program output instead
+  try {
+    if (!hasInput) {
+      try {
+        const term = require('./terminal.js');
+        if (term && typeof term.readAll === 'function') {
+          const out = term.readAll();
+          if (out && out.length > 0) {
+            // Convert bytes (string) into inputBuffer characters (string already)
+            const bytes = typeof out === 'string' ? out.split('').map(c => c.charCodeAt(0)) : out;
+            const outStr = (typeof out === 'string') ? out : String.fromCharCode.apply(null, bytes);
+            const result2 = { input: outStr, bytesRead: bytes.length, hasInput: bytes.length > 0 };
+            const responseValidation2 = validate('terminal.read.response', { success: true, data: result2 });
+            if (!responseValidation2.success) logger.warn('Terminal read response validation failed (term helper)', { errors: responseValidation2.errors });
+            if (typeof broadcastEvent === 'function') broadcastEvent('terminal.read', result2);
+            return res.json(successResponse(result2));
+          }
+        }
+      } catch (e) {
+        // ignore require/term errors
+      }
+    }
+  } catch (e) {
+    // swallow
+  }
    // Broadcast terminal read event
    if (typeof broadcastEvent === 'function') {
      broadcastEvent('terminal.read', { input, bytesRead, hasInput });
