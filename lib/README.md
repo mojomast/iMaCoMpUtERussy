@@ -38,7 +38,7 @@ import { MCPClient } from './lib/mcp-client.js';
 
 async function main() {
   // Create client instance
-  const client = new MCPClient('http://localhost:8001');
+  const client = new MCPClient('http://localhost:3000');
 
   try {
     // Test connection
@@ -204,7 +204,7 @@ console.log('Size reduction:', optimized.improvements.sizeReduction, 'bytes');
 ## Configuration Options
 
 ```javascript
-const client = new MCPClient('http://localhost:8001', {
+const client = new MCPClient('http://localhost:3000', {
   timeoutMs: 30000,        // Request timeout (30 seconds)
   retryAttempts: 3,        // Number of retry attempts
   retryDelayMs: 1000,      // Delay between retries (1 second)
@@ -270,7 +270,7 @@ const client = new MCPClient();
 ### Custom HTTP Headers
 
 ```javascript
-const client = new MCPClient('http://localhost:8001', {
+const client = new MCPClient('http://localhost:3000', {
   // Custom headers for all requests
   userAgent: 'MyCustomAgent/1.0'
 });
@@ -305,7 +305,7 @@ If you're migrating from direct HTTP calls to the MCP server:
 
 ```javascript
 // Before (direct HTTP)
-const response = await fetch('http://localhost:8001/mcp/cpu/state');
+const response = await fetch('http://localhost:3000/mcp/cpu/state');
 const data = await response.json();
 
 // After (MCP Client)

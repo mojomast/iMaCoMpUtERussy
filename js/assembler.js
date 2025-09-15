@@ -231,6 +231,7 @@ function resolveValue(val, labels) {
 
 /**
  * Sanitize assembly source code by stripping invalid characters and enforcing length limits.
+ * Balances security with functionality by allowing legitimate assembly syntax while preventing injection attacks.
  * @param {string} source - Raw assembly source code
  * @returns {string} Sanitized source code
  * @throws {Error} If source is invalid or too long
@@ -246,12 +247,90 @@ function sanitizeAssemblySource(source) {
     throw new Error(`Assembly source too large. Maximum size is ${MAX_SOURCE_LENGTH} characters`);
   }
 
-  // Strip invalid characters - allow only valid assembly language characters
-  // Allow: letters, numbers, whitespace, $, #, :, ;, (, ), ,, -, +, =, /, ., ', ", @
-  // Remove: control characters, non-printable, potentially dangerous chars
-  const sanitized = source.replace(/[^\w\s$#();,.:\-+=/@'"\\]/g, '');
+  // Enhanced character validation: allow legitimate assembly characters while blocking dangerous ones
+  // Allow: letters, numbers, whitespace, common assembly chars ($ # : ; ( ) [ ] , - + = / . ' " @)
+  // Allow: label and macro chars (* % & | ^ ~ < > ? ! { } `)
+  // Block: control characters, null bytes, and other non-printable chars that could be used for injection
+  const sanitized = source.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+
+  // Additional security check: prevent potential script injection patterns
+  const dangerousPatterns = [
+    /<script/i,
+    /javascript:/i,
+    /on\w+\s*=/i,
+    /eval\s*\(/i,
+    /function\s*\(/i,
+    /document\./i,
+    /window\./i
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(sanitized)) {
+      throw new Error('Assembly source contains potentially dangerous content');
+    }
+  }
 
   return sanitized;
+}
+
+/**
+ * Validate assembly syntax to prevent injection attacks while allowing legitimate code.
+ * @param {string} source - Sanitized assembly source code
+ * @throws {Error} If syntax validation fails
+ */
+function validateAssemblySyntax(source) {
+  const lines = source.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.startsWith(';') || line.startsWith('//')) continue;
+
+    // Check for overly long lines that might indicate injection attempts
+    if (line.length > 200) {
+      throw new Error(`Line ${i + 1} is too long (max 200 characters): ${line.substring(0, 50)}...`);
+    }
+
+    // Check for suspicious patterns that might indicate code injection
+    const suspiciousPatterns = [
+      /\\x[0-9a-fA-F]{2}/,  // Hex escape sequences
+      /\\u[0-9a-fA-F]{4}/,  // Unicode escape sequences
+      /eval\s*\(/,          // eval calls
+      /exec\s*\(/,          // exec calls
+      /require\s*\(/,       // require calls (in Node.js context)
+      /import\s*\(/,        // dynamic import attempts
+      /process\./,          // Node.js process access
+      /global\./,           // global object access
+      /console\./,          // console object access (might be legitimate but suspicious)
+      /alert\s*\(/,         // browser alert calls
+      /prompt\s*\(/         // browser prompt calls
+    ];
+
+    for (const pattern of suspiciousPatterns) {
+      if (pattern.test(line)) {
+        throw new Error(`Line ${i + 1} contains suspicious pattern that may indicate injection attempt: ${line}`);
+      }
+    }
+
+    // Basic syntax validation - ensure line follows assembly patterns
+    const parts = line.split(/\s+/);
+    if (parts.length > 0) {
+      const firstPart = parts[0].toUpperCase();
+
+      // Check if it looks like a valid mnemonic or directive
+      const validMnemonics = Object.keys(opcodeTable);
+      const validDirectives = ['.ORG', '.BYTE', '.DB', '.EQU', '.END'];
+
+      if (!validMnemonics.includes(firstPart) &&
+          !validDirectives.includes(firstPart) &&
+          !firstPart.includes(':') && // label
+          !/^[A-Z_][A-Z0-9_]*$/.test(firstPart)) { // potential label without colon
+        // Allow lines that might be labels or assignments
+        if (!/^[A-Z_][A-Z0-9_]*\s*=\s*/.test(line) && !line.includes(':')) {
+          throw new Error(`Line ${i + 1} contains invalid assembly syntax: ${line}`);
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -268,6 +347,9 @@ export function assemble(source, options = {}) {
 
   // Sanitize the input source
   source = sanitizeAssemblySource(source);
+
+  // Validate assembly syntax for security
+  validateAssemblySyntax(source);
 
   // First pass: collect labels and calculate sizes
   let currentPC = origin;

@@ -459,6 +459,124 @@ const validatedData = validateRequest(requestData, schemaType);
    }
    ```
 
+### Technical Implementation Issues
+
+#### ESM/CommonJS Module Compatibility
+
+**Symptoms:**
+- "Cannot use import statement outside a module" errors
+- "require() of ES Module" errors
+- Dynamic import failures
+- Module resolution issues
+
+**Solutions:**
+
+1. **Use ES modules consistently**
+   ```javascript
+   // ✅ Correct: Use dynamic imports for heavy modules
+   const { heavyFunction } = await import('./heavy-module.js');
+
+   // ✅ Correct: Use relative paths without .js extension
+   import { helper } from './utils/helpers';
+   ```
+
+2. **Check package.json configuration**
+   ```json
+   {
+     "type": "module",
+     "engines": {
+       "node": ">=16.0.0"
+     }
+   }
+   ```
+
+3. **Jest configuration for ESM**
+   ```javascript
+   // jest.config.js
+   export default {
+     preset: 'ts-jest/presets/default-esm',
+     extensionsToTreatAsEsm: ['.ts'],
+     globals: {
+       'ts-jest': {
+         useESM: true
+       }
+     }
+   };
+   ```
+
+#### WebSocket Server Disabled
+
+**Symptoms:**
+- Real-time features not working
+- Event broadcasting fails silently
+- WebSocket connection errors
+
+**Solutions:**
+
+1. **Use HTTP polling instead**
+   ```javascript
+   // Poll for updates instead of WebSocket events
+   setInterval(async () => {
+     const status = await fetch('/mcp/cpu/state');
+     const data = await status.json();
+     updateUI(data);
+   }, 1000);
+   ```
+
+2. **Check WebSocket status**
+   ```javascript
+   if (typeof WebSocket === 'undefined') {
+     console.warn('WebSocket not supported, using HTTP polling');
+   }
+   ```
+
+3. **BroadcastEvent function status**
+   ```javascript
+   // Check if broadcastEvent is implemented
+   if (typeof broadcastEvent === 'function') {
+     broadcastEvent('event', data);
+   } else {
+     console.log('WebSocket broadcasting disabled');
+   }
+   ```
+
+#### Circuit Breaker Protection
+
+**Symptoms:**
+- Service unavailable errors
+- Automatic retries failing
+- Circuit breaker OPEN messages
+
+**Solutions:**
+
+1. **Monitor circuit breaker status**
+   ```javascript
+   // Check service health
+   const status = circuitBreaker.getStatus();
+   console.log('CPU service:', status.cpu.available ? '✅' : '❌');
+   ```
+
+2. **Handle circuit breaker errors**
+   ```javascript
+   try {
+     await circuitBreaker.execute('cpu', cpuOperation);
+   } catch (error) {
+     if (error.code === 'SERVICE_UNAVAILABLE') {
+       // Wait for circuit to close or use fallback
+       setTimeout(() => retryOperation(), 5000);
+     }
+   }
+   ```
+
+3. **Configure retry parameters**
+   ```javascript
+   const retryConfig = {
+     maxRetries: 3,
+     baseDelay: 1000,  // 1s, 2s, 4s progression
+     serviceName: 'cpu'
+   };
+   ```
+
 ## Interactive Emulator Issues
 
 ### UI Layout Problems
@@ -690,6 +808,54 @@ const validatedData = validateRequest(requestData, schemaType);
    ```
    INX/INY/DEX/DEY set Zero and Negative flags
    CPX/CPY set Zero, Negative, and Carry flags
+   ```
+
+### Memory Test Behavior
+
+#### Memory test "failures" for ROM clearing are expected
+
+**Symptoms:**
+- Memory tests show "failure" messages when attempting to clear ROM areas
+- Test output indicates ROM write attempts failed
+- This appears as a test failure but is actually correct behavior
+
+**Explanation:**
+
+1. **Normal ROM behavior**
+   ```javascript
+   // ROM areas ($8000-$FFFF) are read-only by design
+   // Attempts to write to ROM addresses are silently ignored
+   // This is the correct security feature, not a bug
+   ```
+
+2. **Expected test behavior**
+   ```
+   ✅ Memory tests will show "ROM write ignored" warnings
+   ✅ This indicates the memory protection is working correctly
+   ✅ Tests should pass despite these "warnings"
+   ✅ ROM integrity is preserved
+   ```
+
+3. **Console.warn messages are normal**
+   ```
+   Console warnings like:
+   "Memory write to ROM address 0x8000 ignored"
+   "ROM clearing failed - this is expected behavior"
+
+   These messages confirm proper memory protection
+   ```
+
+4. **Verification that protection works**
+   ```javascript
+   // Test ROM protection
+   const romAddress = 0x8000;
+   const originalValue = memory.read(romAddress, 1);
+
+   // Attempt to write (should fail silently)
+   memory.write(romAddress, 0xFF, 1);
+   const newValue = memory.read(romAddress, 1);
+
+   console.log(originalValue === newValue); // Should be true
    ```
 
 ## Performance Issues

@@ -200,13 +200,7 @@ export class iMaCoMpUtERussyMemory {
       },
       write: (value) => {
         const bank = value & 0xFF;
-        if (bank < 256) {
-          this.currentBank = bank;
-          // Lazy initialization: create bank buffer if not exists
-          if (!this.banks[bank]) {
-            this.banks[bank] = new Uint8Array(MEMORY_SIZE);
-          }
-        }
+        this.switchToBank(bank);
       }
     });
 
@@ -234,6 +228,93 @@ export class iMaCoMpUtERussyMemory {
   _checkAddr(addr) {
     if (!Number.isInteger(addr) || addr < 0x0000 || addr > 0xFFFF) {
       throw new RangeError(`Address out of bounds: ${addr}`);
+    }
+  }
+
+  /**
+   * Switch to a specific memory bank with comprehensive validation
+   * @param {number} bank - Bank number (0-255)
+   * @throws {RangeError} If bank number is invalid
+   * @throws {Error} If bank initialization fails
+   */
+  switchToBank(bank) {
+    // Validate bank number
+    if (!Number.isInteger(bank) || bank < 0 || bank > 255) {
+      throw new RangeError(`Invalid bank number: ${bank} (must be 0-255)`);
+    }
+
+    // Check if we're already on this bank (no-op)
+    if (this.currentBank === bank) {
+      return;
+    }
+
+    // Validate that bank operations are allowed in current context
+    if (this.transactionStack.length > 0) {
+      const currentTransaction = this.transactionStack[this.transactionStack.length - 1];
+      if (currentTransaction.bank !== bank && currentTransaction.bank !== this.currentBank) {
+        throw new Error(`Cannot switch banks during transaction (transaction locked to bank ${currentTransaction.bank})`);
+      }
+    }
+
+    try {
+      // Lazy initialization with memory allocation validation
+      if (!this.banks[bank]) {
+        // Check available memory before allocation
+        const estimatedMemoryUsage = MEMORY_SIZE + (this.banks.length * MEMORY_SIZE);
+        if (typeof performance !== 'undefined' && performance.memory) {
+          const availableMemory = performance.memory.jsHeapSizeLimit - performance.memory.usedJSHeapSize;
+          if (estimatedMemoryUsage > availableMemory * 0.8) { // Conservative 80% limit
+            throw new Error(`Insufficient memory for bank ${bank} allocation (estimated: ${estimatedMemoryUsage} bytes)`);
+          }
+        }
+
+        this.banks[bank] = new Uint8Array(MEMORY_SIZE);
+
+        // Initialize with zeros for consistency
+        this.banks[bank].fill(0);
+
+        if (this.debugMode) {
+          console.log(`Initialized memory bank ${bank} (${MEMORY_SIZE} bytes)`);
+        }
+      }
+
+      // Store previous bank for rollback capability
+      const previousBank = this.currentBank;
+
+      // Perform the switch
+      this.currentBank = bank;
+
+      // Validate the switch was successful
+      if (this.banks[this.currentBank] === undefined) {
+        // Rollback on failure
+        this.currentBank = previousBank;
+        throw new Error(`Bank switch to ${bank} failed - bank buffer undefined`);
+      }
+
+      // Notify listeners of bank switch
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('memoryBankSwitched', {
+          detail: { previousBank, newBank: bank, timestamp: Date.now() }
+        }));
+      }
+
+      if (this.debugMode) {
+        console.log(`Switched to memory bank ${bank} (previous: ${previousBank})`);
+      }
+
+    } catch (error) {
+      // Enhanced error reporting
+      const errorMsg = `Failed to switch to bank ${bank}: ${error.message}`;
+      console.error(errorMsg);
+
+      // Emit error event for UI integration
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('memoryBankSwitchError', {
+          detail: { bank, error: error.message, timestamp: Date.now() }
+        }));
+      }
+
+      throw new Error(errorMsg);
     }
   }
 
@@ -615,12 +696,12 @@ export class iMaCoMpUtERussyMemory {
       }
       return;
     } else if (maskedAddr === 0xF5) {
-      const bank = maskedValue;
-      if (bank < 256) {
-        this.currentBank = bank;
-        if (!this.banks[bank]) {
-          this.banks[bank] = new Uint8Array(MEMORY_SIZE);
-        }
+      try {
+        this.switchToBank(maskedValue);
+      } catch (error) {
+        // In unchecked context, log error but don't throw
+        console.error(`Unchecked bank switch failed: ${error.message}`);
+        // Keep current bank unchanged on error
       }
       return;
     }
@@ -694,11 +775,24 @@ export class iMaCoMpUtERussyMemory {
     if (!byteArray || typeof byteArray.length !== 'number') {
       throw new TypeError('byteArray must be array-like');
     }
+
     let written = 0;
     let a = addr & 0xFFFF;
-    // Do not wrap around past 0xFFFF. Compute max writable bytes until end of memory.
     const maxWrite = 0x10000 - a;
     const toWrite = Math.min(maxWrite, byteArray.length);
+
+    // Performance optimization: Use bulk operations for large programs
+    if (toWrite >= 256 && this._canUseBulkOperation(a, toWrite)) {
+      try {
+        written = this._bulkLoadProgram(a, byteArray, toWrite);
+        return written;
+      } catch (error) {
+        // Fall back to byte-by-byte on bulk failure
+        console.warn('Bulk load failed, falling back to byte-by-byte:', error.message);
+      }
+    }
+
+    // Byte-by-byte fallback
     for (let i = 0; i < toWrite; i++) {
       const target = (a + i) & 0xFFFF;
       try {
@@ -707,13 +801,97 @@ export class iMaCoMpUtERussyMemory {
         console.error('Stopped loading program due to write error', e);
         break;
       }
-      // Only count as written if the active bank buffer contains the value
       const activeBuffer = this.banks[this.currentBank];
       if (activeBuffer[target] === (byteArray[i] & 0xFF)) {
         written++;
       }
     }
     return written;
+  }
+
+  /**
+   * Check if bulk operations can be used safely for the given range
+   * @private
+   */
+  _canUseBulkOperation(startAddr, length) {
+    const endAddr = startAddr + length - 1;
+
+    // Check if range crosses ROM boundaries
+    if (this._isROM(startAddr) !== this._isROM(endAddr)) {
+      return false;
+    }
+
+    // Check if we're in ROM and ROM writes are not allowed
+    if (this._isROM(startAddr) && this.readonlyROM && !this.allowRomWrites) {
+      return false;
+    }
+
+    // Check for breakpoints in range (can't optimize with breakpoints)
+    for (const [addr] of this.breakpoints) {
+      if (addr >= startAddr && addr <= endAddr) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Bulk load program using optimized memory operations
+   * @private
+   */
+  _bulkLoadProgram(startAddr, byteArray, length) {
+    const activeBuffer = this.banks[this.currentBank];
+    let written = 0;
+
+    // Handle ROM copy-on-write if needed
+    if (this._isROM(startAddr) && !this.modifiedBanks.has(this.currentBank)) {
+      this._handleBulkROMCoW(startAddr, length);
+    }
+
+    // Use subarray for efficient bulk copy
+    const sourceView = byteArray instanceof Uint8Array ? byteArray : new Uint8Array(byteArray);
+    const targetView = activeBuffer.subarray(startAddr, startAddr + length);
+
+    // Bulk copy operation
+    targetView.set(sourceView.subarray(0, length));
+
+    // Verify writes and handle notifications
+    for (let i = 0; i < length; i++) {
+      const addr = startAddr + i;
+      const value = byteArray[i] & 0xFF;
+
+      // Notify write listeners (bulk notification for performance)
+      this._notifyWrite(addr, value);
+
+      if (activeBuffer[addr] === value) {
+        written++;
+      }
+    }
+
+    return written;
+  }
+
+  /**
+   * Handle bulk ROM copy-on-write operations
+   * @private
+   */
+  _handleBulkROMCoW(startAddr, length) {
+    const endAddr = startAddr + length - 1;
+    const activeBuffer = this.banks[this.currentBank];
+
+    // Bulk copy ROM region
+    for (let i = startAddr; i <= endAddr; i++) {
+      if (i >= VIDEO_ROM_START && i <= 0xFFFF) {
+        activeBuffer[i] = this.banks[this.romBank][i];
+      }
+    }
+
+    this.modifiedBanks.add(this.currentBank);
+
+    if (this.debugMode) {
+      console.log(`Bulk CoW: Copied ROM region ${startAddr.toString(16)}-${endAddr.toString(16)}`);
+    }
   }
 
   /**
@@ -728,9 +906,21 @@ export class iMaCoMpUtERussyMemory {
     if (endAddr < startAddr) {
       throw new RangeError('endAddr must be >= startAddr');
     }
+
+    const length = endAddr - startAddr + 1;
     const v = value & 0xFF;
+
+    // Performance optimization: Use bulk operations for large regions
+    if (length >= 64 && this._canUseBulkOperation(startAddr, length)) {
+      try {
+        return this._bulkClearRegion(startAddr, endAddr, v);
+      } catch (error) {
+        console.warn('Bulk clear failed, falling back to byte-by-byte:', error.message);
+      }
+    }
+
+    // Byte-by-byte fallback
     for (let a = startAddr; a <= endAddr; a++) {
-      // respect ROM write rules
       if (this._isROM(a)) {
         if (this.readonlyROM) {
           throw new Error('Attempt to clear ROM region with readonlyROM=true');
@@ -742,6 +932,35 @@ export class iMaCoMpUtERussyMemory {
       const activeBuffer = this.banks[this.currentBank];
       activeBuffer[a] = v;
       this._notifyWrite(a, v);
+    }
+  }
+
+  /**
+   * Bulk clear region using optimized memory operations
+   * @private
+   */
+  _bulkClearRegion(startAddr, endAddr, value) {
+    const activeBuffer = this.banks[this.currentBank];
+    const length = endAddr - startAddr + 1;
+
+    // Handle ROM copy-on-write if needed
+    if (this._isROM(startAddr) && !this.modifiedBanks.has(this.currentBank)) {
+      this._handleBulkROMCoW(startAddr, length);
+    }
+
+    // Use subarray for efficient bulk fill
+    const targetView = activeBuffer.subarray(startAddr, endAddr + 1);
+    targetView.fill(value);
+
+    // Bulk notification for performance (sample notifications)
+    const notifyStep = Math.max(1, Math.floor(length / 16)); // Notify ~16 times max
+    for (let i = 0; i < length; i += notifyStep) {
+      this._notifyWrite(startAddr + i, value);
+    }
+
+    // Final notification for last byte if not already covered
+    if ((length - 1) % notifyStep !== 0) {
+      this._notifyWrite(endAddr, value);
     }
   }
 
@@ -1243,6 +1462,114 @@ setInputReadyCallback(callback) {
       }
     }
 
+    /**
+     * Get memory usage statistics and leak detection information
+     * @returns {Object} Memory usage report
+     */
+    getMemoryStats() {
+        const stats = {
+            totalBanks: this.banks.length,
+            currentBank: this.currentBank,
+            activeBanks: this.banks.filter(bank => bank !== undefined).length,
+            modifiedBanks: this.modifiedBanks.size,
+            compressedRegions: this.compressedRegions.size,
+            transactionDepth: this.transactionStack.length,
+            memoryUsage: {
+                estimatedBytes: this.banks.length * MEMORY_SIZE,
+                activeBanksBytes: this.banks.filter(bank => bank !== undefined).length * MEMORY_SIZE,
+                compressedBytes: Array.from(this.compressedRegions.values())
+                    .reduce((total, region) => total + region.compressedData.length, 0)
+            }
+        };
+
+        // Calculate memory efficiency
+        const originalSize = stats.memoryUsage.activeBanksBytes;
+        const compressedSize = stats.memoryUsage.compressedBytes;
+        stats.memoryUsage.compressionRatio = originalSize > 0 ?
+            ((originalSize - compressedSize) / originalSize * 100).toFixed(2) + '%' : '0%';
+
+        return stats;
+    }
+
+    /**
+     * Detect potential memory leaks by analyzing bank usage patterns
+     * @returns {Object} Leak detection report
+     */
+    detectMemoryLeaks() {
+        const leaks = {
+            unusedBanks: [],
+            staleTransactions: this.transactionStack.length > 10,
+            excessiveCompression: this.compressedRegions.size > this.banks.length / 2,
+            potentialIssues: []
+        };
+
+        // Find unused banks
+        for (let i = 0; i < this.banks.length; i++) {
+            if (this.banks[i] && i !== this.currentBank && !this.modifiedBanks.has(i)) {
+                leaks.unusedBanks.push(i);
+            }
+        }
+
+        // Analyze potential issues
+        if (leaks.unusedBanks.length > 5) {
+            leaks.potentialIssues.push(`Found ${leaks.unusedBanks.length} potentially unused banks`);
+        }
+
+        if (leaks.staleTransactions) {
+            leaks.potentialIssues.push('High transaction stack depth - possible uncommitted transactions');
+        }
+
+        if (leaks.excessiveCompression) {
+            leaks.potentialIssues.push('High compression ratio - consider memory optimization');
+        }
+
+        return leaks;
+    }
+
+    /**
+     * Clean up unused memory banks and optimize memory usage
+     * @returns {Object} Cleanup report
+     */
+    cleanupMemory() {
+        const report = {
+            banksCleaned: 0,
+            regionsDecompressed: 0,
+            memoryFreed: 0
+        };
+
+        // Clean up unused banks (except current and ROM banks)
+        const leaks = this.detectMemoryLeaks();
+        for (const bankId of leaks.unusedBanks) {
+            if (bankId !== 0 && bankId !== this.currentBank) { // Don't clean ROM or current bank
+                this.banks[bankId] = undefined;
+                report.banksCleaned++;
+                report.memoryFreed += MEMORY_SIZE;
+            }
+        }
+
+        // Decompress regions that haven't been accessed recently
+        // This is a simplified cleanup - in practice you'd track access patterns
+        for (const [bankId, region] of this.compressedRegions) {
+            this._decompressRegion(this.banks[bankId], region);
+            report.regionsDecompressed++;
+        }
+        this.compressedRegions.clear();
+
+        // Log cleanup results
+        console.log('Memory cleanup completed:', report);
+
+        return report;
+    }
+
+    /**
+     * Force garbage collection hint (if available)
+     */
+    forceGC() {
+        if (typeof globalThis !== 'undefined' && globalThis.gc) {
+            globalThis.gc();
+            console.log('Manual garbage collection triggered');
+        }
+    }
 }
 
 // attach constants to class as static properties for convenience
@@ -1264,27 +1591,3 @@ if (typeof window !== 'undefined' && window.__VS8_MEMORY_SELFTEST) {
   console.assert(m.readByte(0x0600) === 0x42, 'selftest read/write');
   console.log('iMaCoMpUtERussyMemory self-test OK');
 }
-
-/**
- * Memory-Mapped I/O (MMIO) System
- *
- * Supports hardware device integration through memory addresses that trigger
- * custom read/write handlers instead of accessing the memory buffer.
- *
- * Current Implementation:
- * - $F0: Keyboard input buffer (read-only) - Returns next character or 0
- * - $F1: Terminal output register (write-only) - Outputs to window.terminal.write()
- * - $F2: Status register - Bit 0 indicates input ready, writes can clear buffer
- *
- * Features:
- * - Circular keyboard buffer (256 bytes) with keypress event listener
- * - Automatic interrupt flag management
- * - Browser-environment detection for terminal integration
- * - Callback support for CPU interrupt integration
- *
- * Future Enhancements:
- * - Additional MMIO devices (timers, disk, network)
- * - IRQ integration with CPU
- * - MMIO region configuration
- * - Hardware device simulation framework
- */

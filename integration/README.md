@@ -30,7 +30,7 @@ npm run test:debugging    # Real-time debugging workflows
 ## Prerequisites
 
 - Node.js 18+
-- MCP Server running on localhost:8001
+- MCP Server running on localhost:3000
 - Autonomous Software Agent configured
 - Queue manager system operational
 
@@ -57,7 +57,7 @@ Tests complete workflow from natural language prompts to executed code:
 
 ```javascript
 const agent = new AutonomousSoftwareAgent({
-  mcpServerUrl: 'http://localhost:8001'
+  mcpServerUrl: 'http://localhost:3000'
 });
 
 // Add generation task
@@ -188,12 +188,12 @@ OUTPUT_DIR=./reports npm run test:ci
    ```
 
 2. **Port Conflicts**
-   ```bash
-   # Check if port 8001 is available
-   lsof -i :8001
-   # Kill conflicting process
-   kill -9 $(lsof -t -i :8001)
-   ```
+    ```bash
+    # Check if port 3000 is available
+    lsof -i :3000
+    # Kill conflicting process
+    kill -9 $(lsof -t -i :3000)
+    ```
 
 3. **Timeout Issues**
    ```bash

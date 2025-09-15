@@ -146,14 +146,14 @@ To add a new UI panel:
 - **Memory Access**: readMemory(), writeMemory(), saveState(), loadState()
 - **Assembly Pipeline**: assembleAndLoad(), assembleAndRun() for source-to-execution
 - **AI Generation**: aiGenerate() for natural language to assembly code
-- **WebSocket Events**: Real-time updates for debug events, memory changes, video updates
+- **HTTP Requests**: REST API calls for all operations
 - **Error Handling**: Structured MCP error parsing with retry logic
 
 **Data Flow**:
 ```
 User Input (UI) → MCP Client → REST API → MCP Server → Emulator Core
      ↑                                              ↓
-WebSocket Events ← Real-time Updates ← Execution Trace ← CPU/Memory
+HTTP Requests ← Periodic Updates ← Execution Trace ← CPU/Memory
 ```
 
 **MCP Extension**:
@@ -199,7 +199,7 @@ To add new MCP endpoints:
 
 - **CPU ↔ Memory**: Direct method calls for readByte/writeByte during instruction execution
 - **UI ↔ Core**: Event listeners on memory writes, periodic polling for register updates
-- **MCP Client ↔ Server**: HTTP requests for operations, WebSocket for real-time events
+- **MCP Client ↔ Server**: HTTP requests for all operations
 - **Layout Manager ↔ Panels**: DOM manipulation and event delegation for panel controls
 
 ## Extension Guide

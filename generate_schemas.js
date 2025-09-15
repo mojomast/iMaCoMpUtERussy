@@ -62,7 +62,7 @@ const schemas = {
     }
   },
 
-  'programs.load.request.json': {
+  'programs.loadSample.request.json': {
     "$schema": "https://json-schema.org/draft-07/schema#",
     "type": "object",
     "required": ["sampleName"],
@@ -100,7 +100,7 @@ const schemas = {
     "required": ["x", "y", "color"],
     "properties": {
       "x": { "type": "integer", "minimum": 0, "maximum": 31 },
-      "y": { "type": "integer", "minimum": 0, "maximum": 31 },
+      "y": { "type": "integer", "minimum": 0, "maximum": 23 },
       "color": { "type": "integer", "minimum": 0, "maximum": 15 }
     }
   },
@@ -250,6 +250,13 @@ const aggregateSchema = {
               "type": "object",
               "properties": {
                 "request": { "$ref": "programs.load.request.json" },
+                "response": { "$ref": "programs.load.response.json" }
+              }
+            },
+            "loadSample": {
+              "type": "object",
+              "properties": {
+                "request": { "$ref": "programs.loadSample.request.json" },
                 "response": { "$ref": "programs.load.response.json" }
               }
             }

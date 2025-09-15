@@ -59,7 +59,7 @@ This is an **autonomous coding agent system** built around a retro 8-bit CPU emu
 - **Files**: `js/ui/` directory with modular panels
 - **Layout**: Draggable, resizable panels with persistent layouts
 - **Components**: Assembly editor, debugger, memory viewer, terminal I/O, video display
-- **Real-time updates** via WebSocket and MCP events
+- **Periodic updates** via HTTP polling and MCP events
 
 ### Key Architectural Patterns
 

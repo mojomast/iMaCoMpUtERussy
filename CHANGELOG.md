@@ -85,7 +85,7 @@ All notable changes to this project will be documented in this file. The format 
 - Expanded test coverage for CPU instructions, memory operations, and UI components
 - Complete CPU instruction set implementation with custom video graphics operations
 - Optimized execution engine with cycle-accurate timing and interrupt handling
-- Enhanced MCP client with timeout handling, error recovery, and WebSocket integration
+- Enhanced MCP client with timeout handling, error recovery, and HTTP request optimization
 
 ### Fixed
 - Memory leak issues in CPU state management and MCP client caching

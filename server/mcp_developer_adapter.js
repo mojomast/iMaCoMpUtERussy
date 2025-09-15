@@ -45,11 +45,11 @@ function createDeveloperAdapters() {
   // Expose server terminal helper globally so low-level memory code can call it
   try {
     if (typeof globalThis !== 'undefined' && typeof globalThis.__SERVER_TERMINAL === 'undefined') {
-      try {
-        globalThis.__SERVER_TERMINAL = require('./terminal.js');
-      } catch (e) {
-        // ignore if require fails; adapter will still use its local getServerTerminal
-      }
+      import('./terminal.js').then(module => {
+        globalThis.__SERVER_TERMINAL = module;
+      }).catch(e => {
+        // ignore if import fails; adapter will still use its local getServerTerminal
+      });
     }
   } catch (e) {
     // swallow
@@ -60,18 +60,21 @@ function createDeveloperAdapters() {
   // so that /mcp/terminal/read can return the program output.
   const serverTerminalBuffer = [];
   // Terminal helper for server-side terminal capture (shared access)
-  // Lazily require to avoid circular deps in some environments
+  // Lazily import to avoid circular deps in some environments
   let serverTerminal = null;
-  function getServerTerminal() {
+  async function getServerTerminal() {
     if (!serverTerminal) {
       try {
-        serverTerminal = require('./terminal.js');
+        const module = await import('./terminal.js');
+        serverTerminal = module.default || module;
+        return serverTerminal;
       } catch (e) {
         // Fallback to inline minimal terminal shim
         serverTerminal = {
           write: (v) => { serverTerminalBuffer.push(typeof v === 'number' ? v & 0xFF : String(v).charCodeAt(0) & 0xFF); },
           readAll: () => serverTerminalBuffer.splice(0, serverTerminalBuffer.length)
         };
+        return serverTerminal;
       }
     }
     return serverTerminal;
@@ -264,7 +267,8 @@ function createDeveloperAdapters() {
             const addr16 = address & 0xFFFF;
             if (addr16 === 0xF0) {
               try {
-                const t = getServerTerminal();
+                const tPromise = getServerTerminal();
+                const t = await tPromise; // Wait for the terminal module to load
                 if (t && typeof t.peekBytes === 'function') {
                   const bytesAvail = t.peekBytes();
                   if (bytesAvail && bytesAvail.length > 0) {
@@ -341,7 +345,7 @@ function createDeveloperAdapters() {
             // If this is a terminal output write ($F1), capture on server terminal helper
             try {
               if ((address & 0xFFFF) === 0xF1) {
-                const term = getServerTerminal();
+                const term = await getServerTerminal();
                 if (term && typeof term.write === 'function') {
                   try { term.write(value & 0xFF); } catch(e){}
                 } else {

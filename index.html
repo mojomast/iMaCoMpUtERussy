@@ -646,6 +646,15 @@
         }
 
         function updateSystemStatus(elementId, text, type) {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer update until DOM is ready
+                document.addEventListener('DOMContentLoaded', () => {
+                    updateSystemStatus(elementId, text, type);
+                });
+                return;
+            }
+
             const element = document.getElementById(elementId);
             if (element) {
                 element.textContent = text;
@@ -654,6 +663,14 @@
         }
 
         function log(message, target = 'system-log') {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer logging until DOM is ready, but still log to console
+                document.addEventListener('DOMContentLoaded', () => {
+                    log(message, target);
+                });
+            }
+
             const timestamp = new Date().toLocaleTimeString();
             const logElement = document.getElementById(target);
             if (logElement) {
@@ -662,7 +679,7 @@
                 if (lastMessage && lastMessage.includes(message)) {
                     return; // Skip duplicate messages
                 }
-                
+
                 // Limit log length to prevent memory issues
                 const maxLogEntries = 100;
                 const logEntries = logElement.children;
@@ -672,7 +689,7 @@
                         if (logEntries[0]) logEntries[0].remove();
                     }
                 }
-                
+
                 const logEntry = document.createElement('div');
                 logEntry.style.color = '#00ff00';
                 logEntry.style.marginBottom = '2px';
@@ -758,9 +775,18 @@
         }
 
         function handleTerminalOutput(value) {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer output until DOM is ready
+                document.addEventListener('DOMContentLoaded', () => {
+                    handleTerminalOutput(value);
+                });
+                return;
+            }
+
             const output = document.getElementById('console-output');
             log(`📺 handleTerminalOutput called: value=${value}, output element exists=${!!output}`);
-            
+
             if (output && value > 0) {
                 if (value === 10 || value === 13) { // Newline
                     output.innerHTML += '<br>';
@@ -836,11 +862,18 @@
         }
 
         function updateCPUDisplay() {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer update until DOM is ready
+                document.addEventListener('DOMContentLoaded', updateCPUDisplay);
+                return;
+            }
+
             if (cpu) {
                 try {
                     // Try different ways to access CPU registers
                     let pc, a, x, y, sp, status;
-                    
+
                     if (cpu.registers) {
                         // Method 1: cpu.registers object
                         const regs = cpu.registers;
@@ -859,16 +892,23 @@
                         sp = cpu.SP || cpu.sp || 255;
                         status = cpu.status || cpu.P || cpu.p || 0;
                     }
-                    
-                    // Update display
-                    document.getElementById('reg-pc').textContent = pc.toString(16).padStart(4, '0').toUpperCase();
-                    document.getElementById('reg-a').textContent = a.toString(16).padStart(2, '0').toUpperCase();
-                    document.getElementById('reg-x').textContent = x.toString(16).padStart(2, '0').toUpperCase();
-                    document.getElementById('reg-y').textContent = y.toString(16).padStart(2, '0').toUpperCase();
-                    document.getElementById('reg-sp').textContent = sp.toString(16).padStart(2, '0').toUpperCase();
-                    document.getElementById('reg-status').textContent = status.toString(16).padStart(2, '0').toUpperCase();
-                    
-                    document.getElementById('cpu-cycles').textContent = `Cycles: ${cpuCycles}`;
+
+                    // Update display with null checks
+                    const pcEl = document.getElementById('reg-pc');
+                    const aEl = document.getElementById('reg-a');
+                    const xEl = document.getElementById('reg-x');
+                    const yEl = document.getElementById('reg-y');
+                    const spEl = document.getElementById('reg-sp');
+                    const statusEl = document.getElementById('reg-status');
+                    const cyclesEl = document.getElementById('cpu-cycles');
+
+                    if (pcEl) pcEl.textContent = pc.toString(16).padStart(4, '0').toUpperCase();
+                    if (aEl) aEl.textContent = a.toString(16).padStart(2, '0').toUpperCase();
+                    if (xEl) xEl.textContent = x.toString(16).padStart(2, '0').toUpperCase();
+                    if (yEl) yEl.textContent = y.toString(16).padStart(2, '0').toUpperCase();
+                    if (spEl) spEl.textContent = sp.toString(16).padStart(2, '0').toUpperCase();
+                    if (statusEl) statusEl.textContent = status.toString(16).padStart(2, '0').toUpperCase();
+                    if (cyclesEl) cyclesEl.textContent = `Cycles: ${cpuCycles}`;
                 } catch (error) {
                     // Only log occasionally to avoid spam
                     if (cpuCycles % 100 === 0) {
@@ -879,8 +919,15 @@
         }
 
         function updateMemoryDisplay() {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer update until DOM is ready
+                document.addEventListener('DOMContentLoaded', updateMemoryDisplay);
+                return;
+            }
+
             if (!memory || !memory.readByte) return;
-            
+
             const display = document.getElementById('memory-display');
             if (!display) return;
             

@@ -27,14 +27,27 @@ All endpoints use standardized error responses:
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
 | `CPU_NOT_READY` | 409 | CPU is currently executing |
+| `CPU_HALTED` | 422 | CPU has halted execution |
+| `CPU_TIMEOUT` | 408 | CPU operation timed out |
 | `MEMORY_OUT_OF_BOUNDS` | 400 | Memory address out of valid range (0x0000-0xFFFF) |
+| `MEMORY_OUT_OF_RANGE` | 422 | Memory address range exceeds bounds |
 | `INVALID_ASSEMBLY` | 400 | Assembly code syntax error |
 | `PROGRAM_TOO_LARGE` | 400 | Program exceeds maximum size |
 | `INVALID_VIDEO_OPERATION` | 400 | Video framebuffer operation invalid |
+| `VIDEO_UPDATE_TIMEOUT` | 408 | Video update operation timed out |
 | `TIMEOUT_EXCEEDED` | 408 | Operation timed out |
+| `TERMINAL_BUSY` | 503 | Terminal is currently busy |
 | `SYSTEM_ERROR` | 500 | Internal system error |
 | `VALIDATION_FAILED` | 422 | Input validation failed |
 | `RESOURCE_BUSY` | 503 | Resource temporarily unavailable |
+| `PROGRAM_NOT_FOUND` | 404 | Requested program not found |
+| `PROGRAM_EXISTS` | 409 | Program already exists |
+| `QUEUE_FULL` | 503 | Queue is at maximum capacity |
+| `TASK_NOT_FOUND` | 404 | Requested task not found |
+| `INVALID_BREAKPOINT` | 422 | Invalid breakpoint operation |
+| `BREAKPOINT_HIT` | 422 | Breakpoint was hit during execution |
+| `NOT_FOUND` | 404 | Resource not found |
+| `ENDPOINT_NOT_FOUND` | 404 | API endpoint not found |
 
 Standard error response format:
 ```json
@@ -43,7 +56,12 @@ Standard error response format:
   "error": {
     "code": "ERROR_CODE",
     "message": "Human-readable description",
-    "details": {}
+    "details": {},
+    "retryable": true,
+    "retryCount": 0,
+    "maxRetries": 3,
+    "retryDelay": 1000,
+    "suggestedAction": "Retry operation"
   }
 }
 ```
@@ -300,8 +318,83 @@ Loads compiled bytecode into memory.
 }
 ```
 
-**Possible Errors:** `MEMORY_OUT_OF_BOUNDS`, `VALIDATION_FAILED`  
+**Possible Errors:** `MEMORY_OUT_OF_BOUNDS`, `VALIDATION_FAILED`
 **Maps to:** `memory.loadProgram()` in [`server/mcp_developer_adapter.js`](server/mcp_developer_adapter.js:417)
+
+### POST /mcp/memory/saveState
+Saves current memory state to a file for later restoration.
+
+**Request Schema:** `memory.saveState.request.json`
+```json
+{
+  "name": "my_state",
+  "range": {
+    "start": 0,
+    "end": 65535
+  },
+  "overwrite": false
+}
+```
+
+**Response Schema:** `memory.saveState.response.json`
+```json
+{
+  "success": true,
+  "data": {
+    "name": "my_state",
+    "bytesSaved": 65536,
+    "range": {
+      "start": 0,
+      "end": 65535
+    },
+    "savedAt": "2025-09-15T19:00:00.000Z"
+  }
+}
+```
+
+**Possible Errors:** `STATE_EXISTS`, `MEMORY_OUT_OF_BOUNDS`, `VALIDATION_FAILED`
+**Maps to:** Memory state save in [`server/mcp_server.js`](server/mcp_server.js:262)
+
+```bash
+curl -X POST http://localhost:8001/mcp/memory/saveState \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my_state", "overwrite": false}'
+```
+
+### POST /mcp/memory/loadState
+Loads previously saved memory state from a file.
+
+**Request Schema:** `memory.loadState.request.json`
+```json
+{
+  "name": "my_state",
+  "targetAddress": 0,
+  "range": {
+    "start": 0,
+    "end": 65535
+  }
+}
+```
+
+**Response Schema:** `memory.loadState.response.json`
+```json
+{
+  "success": true,
+  "data": {
+    "name": "my_state",
+    "bytesLoaded": 65536,
+    "targetAddress": 0,
+    "range": {
+      "start": 0,
+      "end": 65535
+    },
+    "loadedAt": "2025-09-15T19:00:00.000Z"
+  }
+}
+```
+
+**Possible Errors:** `STATE_NOT_FOUND`, `MEMORY_OUT_OF_BOUNDS`, `INVALID_RANGE`
+**Maps to:** Memory state load in [`server/mcp_server.js`](server/mcp_server.js:360)
 
 ## Assembly Operations
 
@@ -728,8 +821,175 @@ Manages CPU and memory breakpoints.
 }
 ```
 
-**Possible Errors:** `INVALID_BREAKPOINT`, `NOT_FOUND`  
+**Possible Errors:** `INVALID_BREAKPOINT`, `NOT_FOUND`
 **Maps to:** Breakpoint management in [`server/mcp_developer_adapter.js`](server/mcp_developer_adapter.js:904)
+
+## Queue Management Operations
+
+### POST /mcp/queue/add
+Adds a task to the AI processing queue.
+
+**Request Schema:** `queue.add.request.json`
+```json
+{
+  "prompt": "Generate assembly code to display 'Hello' on terminal",
+  "type": "generation",
+  "priority": "normal",
+  "metadata": {
+    "requestId": "req-123"
+  }
+}
+```
+
+**Response Schema:** `queue.add.response.json`
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "task-456",
+    "message": "Task added to queue successfully",
+    "type": "generation",
+    "priority": "normal"
+  }
+}
+```
+
+**Possible Errors:** `INVALID_REQUEST`, `SERVICE_UNAVAILABLE`
+**Maps to:** Queue management in [`server/mcp_server.js`](server/mcp_server.js:1924)
+
+```bash
+curl -X POST http://localhost:8001/mcp/queue/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Create a Fibonacci program in assembly",
+    "type": "generation",
+    "priority": "normal"
+  }'
+```
+
+### GET /mcp/queue/list
+Lists tasks in the AI processing queue with optional filtering.
+
+**Query Parameters:**
+- `status`: Filter by status (queued, processing, completed, failed, cancelled)
+- `type`: Filter by type (generation, optimization, testing, debugging, custom)
+- `priority`: Filter by priority (high, normal, low)
+- `search`: Search in prompt text
+- `limit`: Maximum items to return (default: 100, max: 1000)
+
+**Response Schema:** `queue.list.response.json`
+```json
+{
+  "success": true,
+  "data": {
+    "tasks": [
+      {
+        "id": "task-456",
+        "prompt": "Create a sorting algorithm...",
+        "type": "generation",
+        "priority": "normal",
+        "status": "queued",
+        "createdAt": "2025-09-15T19:00:00.000Z"
+      }
+    ],
+    "count": 1,
+    "total": 1,
+    "filter": {
+      "status": ["queued"]
+    },
+    "limit": 100
+  }
+}
+```
+
+**Possible Errors:** `SERVICE_UNAVAILABLE`
+**Maps to:** Queue listing in [`server/mcp_server.js`](server/mcp_server.js:1975)
+
+```bash
+curl -X GET "http://localhost:8001/mcp/queue/list?status=queued&limit=50"
+```
+
+## AI Model Operations
+
+### POST /mcp/ai/generate
+Generates content using AI models for assembly programming assistance.
+
+**Request Schema:** `ai.generate.request.json`
+```json
+{
+  "prompt": "Generate assembly code to display 'Hello' on terminal",
+  "task": "generation",
+  "options": {
+    "model": "auto",
+    "maxTokens": 1000,
+    "temperature": 0.7
+  }
+}
+```
+
+**Response Schema:** `ai.generate.response.json`
+```json
+{
+  "success": true,
+  "data": {
+    "content": ".org $0600\nLDA #72\nSTA $F1\nLDA #101\nSTA $F1\n...",
+    "model": "claude-3-sonnet",
+    "tokensUsed": 150,
+    "generatedAt": "2025-09-15T19:00:00.000Z"
+  }
+}
+```
+
+**Possible Errors:** `AI_GENERATION_FAILED`, `INVALID_REQUEST`, `SERVICE_UNAVAILABLE`
+**Maps to:** AI model generation in [`server/mcp_server.js`](server/mcp_server.js:2032)
+
+```bash
+curl -X POST http://localhost:8001/mcp/ai/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Create a loop in assembly",
+    "task": "generation"
+  }'
+```
+
+### POST /mcp/ai/models
+Lists available AI models and their configuration status.
+
+**Request Schema:** `ai.models.request.json`
+```json
+{
+  "task": "generation"
+}
+```
+
+**Response Schema:** `ai.models.response.json`
+```json
+{
+  "success": true,
+  "data": {
+    "availableModels": [
+      {
+        "name": "claude-3-sonnet",
+        "provider": "anthropic",
+        "capabilities": ["text-generation", "code-generation"]
+      }
+    ],
+    "configStatus": {
+      "anthropic": "configured",
+      "openai": "missing-key"
+    }
+  }
+}
+```
+
+**Possible Errors:** `SERVICE_UNAVAILABLE`
+**Maps to:** AI model listing in [`server/mcp_server.js`](server/mcp_server.js:2110)
+
+```bash
+curl -X POST http://localhost:8001/mcp/ai/models \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
 
 ## Limits & Safety
 

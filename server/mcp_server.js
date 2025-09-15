@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
-/* global broadcastEvent, checkBreakpoint */
-
 /**
  * iMaCoMpUtERussy MCP Server
  *
  * Express.js REST API server providing MCP (Model Context Protocol) endpoints
  * for interacting with the iMaCoMpUtERussy emulator.
+ *
+ * Global functions defined:
+ * - broadcastEvent: Handles WebSocket broadcasting (currently no-op)
+ * - checkBreakpoint: Checks for active breakpoints (currently no-op)
  */
 
 import express from 'express';
@@ -859,7 +861,7 @@ app.get('/mcp/programs/list', moderateLimiter, asyncHandler(async (req, res) => 
 }));
 
 app.post('/mcp/programs/load-sample', moderateLimiter, asyncHandler(async (req, res) => {
-  const validation = validate('programs.load.request', req.body);
+  const validation = validate('programs.loadSample.request', req.body);
   if (!validation.success) {
     throw MCPError.fromAJVValidation(validation.errors);
   }
@@ -1838,7 +1840,7 @@ app.get('/mcp/terminal/read', authenticateAPIKey, moderateLimiter, asyncHandler(
   try {
     if (!hasInput) {
       try {
-        const term = require('./terminal.js');
+        const term = await import('./terminal.js');
         if (term && typeof term.readAll === 'function') {
           const out = term.readAll();
           if (out && out.length > 0) {
@@ -1853,7 +1855,7 @@ app.get('/mcp/terminal/read', authenticateAPIKey, moderateLimiter, asyncHandler(
           }
         }
       } catch (e) {
-        // ignore require/term errors
+        // ignore import/term errors
       }
     }
   } catch (e) {
@@ -2295,10 +2297,16 @@ async function startServer() {
       // TODO: Fix WebSocket server setup for production
       console.log('WebSocket server disabled - using direct HTTP endpoints for MCP events');
       
-      // Define broadcastEvent as a no-op function for now
+      // Define broadcastEvent as a no-op function for now, ensuring it's globally available
       globalThis.broadcastEvent = (eventType, data) => {
         logger.info('Broadcast event (disabled)', { eventType, data });
         // In production, this would broadcast via WebSocket
+      };
+      
+      // Define checkBreakpoint as a no-op function to prevent undefined errors
+      globalThis.checkBreakpoint = () => {
+        logger.debug('Breakpoint check (disabled - no debugger attached)');
+        return false; // Always return false when no debugger is active
       };
     });
 

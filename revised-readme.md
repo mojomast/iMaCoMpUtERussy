@@ -52,10 +52,10 @@ npm start
 
 ### MCP Server Integration
 - **REST API** for programmatic control
+- **WebSocket events** for real-time monitoring
 - **AI integration** for natural language programming
 - **Queue system** for batch operations
 - **Cross-platform compatibility** (Windows/macOS/Linux)
-- **WebSocket server disabled** (HTTP polling available)
 
 ## 📊 Memory Map
 
@@ -150,7 +150,7 @@ npm run mcp-server
 npm run dev:full
 
 # Test MCP endpoints
-curl http://localhost:3000/health
+curl http://localhost:8001/health
 ```
 
 ## 📋 Sample Programs
@@ -179,12 +179,12 @@ HLT                         ; Halt execution
 ### Basic API Usage
 ```bash
 # Reset CPU
-curl -X POST http://localhost:3000/mcp/cpu/reset \
+curl -X POST http://localhost:8001/mcp/cpu/reset \
   -H "Content-Type: application/json" \
   -d '{"hardReset": false}'
 
 # Load and run assembly
-curl -X POST http://localhost:3000/mcp/assemble/loadAndRun \
+curl -X POST http://localhost:8001/mcp/assemble/loadAndRun \
   -H "Content-Type: application/json" \
   -d '{
     "source": ".org $0600\nLDA #$42\nSTA $00\nHLT",
@@ -193,7 +193,7 @@ curl -X POST http://localhost:3000/mcp/assemble/loadAndRun \
   }'
 
 # Set video pixel
-curl -X POST http://localhost:3000/mcp/video/setPixel \
+curl -X POST http://localhost:8001/mcp/video/setPixel \
   -H "Content-Type: application/json" \
   -d '{"x": 10, "y": 5, "color": 15}'
 ```
@@ -202,7 +202,7 @@ curl -X POST http://localhost:3000/mcp/video/setPixel \
 ```javascript
 import { MCPClient } from './lib/mcp-client.js';
 
-const client = new MCPClient('http://localhost:3000');
+const client = new MCPClient('http://localhost:8001');
 
 // Test connectivity
 const health = await client.healthCheck();
@@ -222,27 +222,9 @@ const result = await client.assembleAndRun(`
 ### Current Limitations
 - Video display is simulated (no actual CRT output)
 - Some 6502 instructions not yet implemented
+- WebSocket server disabled in current build
 - Limited to 64KB memory space
 - No persistent storage for programs
-
-### Technical Implementation Notes
-
-#### ESM/CommonJS Compatibility
-- The project uses ES modules (`"type": "module"`) for modern JavaScript support
-- Dynamic `import()` statements are used for heavy modules to avoid ESM chain issues
-- Legacy CommonJS modules are handled through dynamic imports where needed
-- All imports use relative paths without `.js` extensions (Jest mapper handles resolution)
-
-#### WebSocket Server Status
-- **WebSocket server is currently disabled** in the build
-- Real-time events are handled through HTTP polling instead
-- `broadcastEvent` functions are implemented as no-op placeholders for future WebSocket support
-- Event broadcasting can be re-enabled by implementing WebSocket connections in the server
-
-#### Circuit Breaker Protection
-- All MCP endpoints include circuit breaker protection for resilience
-- Failed operations automatically retry with exponential backoff
-- Service health is monitored and degraded services are automatically isolated
 
 ### Planned Improvements
 - Complete 6502 instruction set implementation

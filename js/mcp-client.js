@@ -217,9 +217,11 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
         async resilientFetch(url, options, maxRetries = 3, baseDelay = 1000, operationType = 'default', queueOnFailure = true) {
           let lastError;
           let retryCount = 0;
+          // Enforce maximum retry limits to prevent infinite loops
+          const enforcedMaxRetries = Math.min(maxRetries, 10); // Cap at 10 retries max
           const specificDelays = [1000, 2000, 4000]; // 1s, 2s, 4s for 3 attempts
       
-          while (retryCount <= maxRetries) {
+          while (retryCount <= enforcedMaxRetries) {
             try {
               const timeoutMs = options._timeoutMs || 10000;
               const controller = new AbortController();
@@ -231,15 +233,23 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
               // Timeout promise
               const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => {
-                  controller.abort();
-                  reject(new Error(`MCP request timeout after ${timeoutMs}ms`));
+                  if (!controller.signal.aborted) {
+                    controller.abort();
+                    reject(new Error(`MCP request timeout after ${timeoutMs}ms for ${operationType}`));
+                  }
                 }, timeoutMs);
               });
               
               // Fetch promise
               const fetchPromise = fetch(url, fetchOptions).catch(err => {
-                if (err.name !== 'AbortError') throw err;
-                return Promise.reject(err);
+                if (err.name === 'AbortError') {
+                  // Handle abort gracefully
+                  throw new Error(`Request aborted for ${operationType} (likely timeout)`);
+                }
+                if (err.message?.includes('fetch')) {
+                  throw new Error(`Network error for ${operationType}: ${err.message}`);
+                }
+                throw err;
               });
               
               const response = await Promise.race([fetchPromise, timeoutPromise]);
@@ -273,14 +283,16 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
                 throw error;
               }
               
-              // Calculate retry delay
+              // Calculate retry delay with improved backoff
               let delay;
               if (retryCount <= specificDelays.length) {
                 delay = specificDelays[retryCount - 1];
               } else {
-                // Exponential backoff for additional retries
+                // Exponential backoff for additional retries with jitter
                 delay = baseDelay * Math.pow(2, retryCount - 1);
-                delay = Math.min(delay, 8000); // Cap at 8 seconds
+                delay = Math.min(delay, 30000); // Cap at 30 seconds to prevent excessive delays
+                // Add jitter to prevent thundering herd
+                delay += Math.random() * 1000; // Add up to 1 second of random jitter
               }
               
               console.warn(`🔄 MCP retry ${retryCount}/${maxRetries} for ${operationType} after ${delay}ms:`, error.message);
@@ -1280,17 +1292,25 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
           let reconnectAttempts = 0;
           const maxReconnectAttempts = 5;
           const reconnectDelays = [1000, 2000, 4000, 8000, 16000]; // Exponential backoff
+          let isReconnecting = false; // Prevent concurrent reconnection attempts
           
           function connectWebSocket() {
+            if (isReconnecting) {
+              console.log('🔄 WebSocket reconnection already in progress, skipping');
+              return;
+            }
+
+            isReconnecting = true;
             window.mcpWebSocket = new WebSocket(wsUrl);
-            
+
             window.mcpWebSocket.onopen = function() {
               console.log('🔌 MCP WebSocket connected for real-time updates');
               reconnectAttempts = 0; // Reset reconnect counter on successful connection
+              isReconnecting = false; // Clear reconnection flag
               if (window.logToMCP) {
                 window.logToMCP('info', 'MCP WebSocket reconnected successfully');
               }
-              
+
               // Re-subscribe to any lost events or send pending messages
               if (window.mcpClient.replayTimer) {
                 console.log('🔄 WebSocket reconnected - triggering queued operation replay');
@@ -1356,36 +1376,45 @@ function initializeMCPClientController(serverAvailable, serverUrl) {
             
             window.mcpWebSocket.onerror = function(error) {
               console.error('MCP WebSocket error:', error);
+              isReconnecting = false; // Clear flag on error
               if (window.logToMCP) {
-                window.logToMCP('error', 'MCP WebSocket connection error - attempting reconnection');
+                window.logToMCP('error', `MCP WebSocket connection error: ${error.message || 'Unknown error'} - attempting reconnection`);
               }
             };
-            
+
             window.mcpWebSocket.onclose = function(event) {
               console.log('MCP WebSocket disconnected:', event.code, event.reason);
+              isReconnecting = false; // Clear flag on close
               if (window.logToMCP) {
-                window.logToMCP('warn', `MCP WebSocket disconnected (code: ${event.code}) - attempting reconnection`);
+                window.logToMCP('warn', `MCP WebSocket disconnected (code: ${event.code}, reason: ${event.reason || 'No reason provided'}) - attempting reconnection`);
               }
-              
-              // Attempt reconnection with exponential backoff
-              if (reconnectAttempts < maxReconnectAttempts) {
+
+              // Only attempt reconnection for non-deliberate disconnections
+              const deliberateCloseCodes = [1000, 1001]; // Normal closure, Going away
+              if (!deliberateCloseCodes.includes(event.code) && reconnectAttempts < maxReconnectAttempts) {
                 const delay = reconnectDelays[reconnectAttempts] || 30000; // Cap at 30s
                 reconnectAttempts++;
                 console.log(`🔄 WebSocket reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts} in ${delay}ms`);
-                
+
                 setTimeout(() => {
-                  console.log('🔄 Attempting WebSocket reconnection...');
-                  connectWebSocket();
+                  if (!isReconnecting) {
+                    console.log('🔄 Attempting WebSocket reconnection...');
+                    connectWebSocket();
+                  }
                 }, delay);
               } else {
-                console.error('❌ Max WebSocket reconnection attempts reached');
-                if (window.logToMCP) {
-                  window.logToMCP('error', 'Max WebSocket reconnection attempts reached - operating in degraded mode');
-                }
-                // Switch to degraded/offline mode
-                this.serverAvailable = false;
-                if (window.feedbackSystem && window.feedbackSystem.showToast) {
-                  window.feedbackSystem.showToast('WebSocket failed - operating in offline mode', 'error');
+                if (reconnectAttempts >= maxReconnectAttempts) {
+                  console.error('❌ Max WebSocket reconnection attempts reached');
+                  if (window.logToMCP) {
+                    window.logToMCP('error', 'Max WebSocket reconnection attempts reached - operating in degraded mode');
+                  }
+                  // Switch to degraded/offline mode
+                  window.mcpClient.serverAvailable = false;
+                  if (window.feedbackSystem && window.feedbackSystem.showToast) {
+                    window.feedbackSystem.showToast('WebSocket failed - operating in offline mode', 'error');
+                  }
+                } else {
+                  console.log('🔌 WebSocket closed deliberately (code:', event.code, ') - not attempting reconnection');
                 }
               }
             };

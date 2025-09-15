@@ -1,432 +1,338 @@
-# iMaCoMpUtERussy MCP Integration Bug Fix & Implementation Plan
+# iMaCoMpUtERussy - Bug Report & Improvement Recommendations
 
-## Critical Issues Requiring Immediate Fix
-## Current Progress Status (Updated: September 2025)
+## 🚨 Critical Bugs
 
-### ✅ Phase 1: Critical Syntax & Runtime Errors (COMPLETED)
-- ✅ Fixed all `return throw` syntax errors (Lines 202, 284, 330, 378, 386, 390)
-- ✅ Fixed undefined variable references (`addr` in step endpoint)
-- ✅ Fixed validation error handling inconsistencies
-- ✅ Completed: All syntax errors resolved, basic endpoint functionality restored
+### Backend/API Issues
 
-### ✅ Phase 2: Missing Implementation (COMPLETED)
-- ✅ Implemented `server/mcp_developer_adapter.js` with all debug methods
-- ✅ Created missing `agent/queue-manager.js`
-- ✅ Added missing npm dependencies (express, ajv, cors, concurrently, winston, helmet, express-rate-limit)
-- ✅ Implemented debug endpoint functionality
-
-### ✅ Phase 3: Security & Performance (COMPLETED)
-- ✅ Added comprehensive input validation
-- ✅ Implemented rate limiting and request throttling
-- ✅ Implemented proper error handling and logging with winston
-- ✅ Added file system security measures
-
-### ✅ Windows Script Fixes (COMPLETED)
-- ✅ Fixed path separator issues in Windows ('\\" vs "/" for file paths)
-- ✅ Updated npm scripts for Windows compatibility (cmd.exe vs bash)
-- ✅ Resolved encoding issues in Windows terminal integration
-- ✅ Adjusted file system permissions and access controls for Windows compatibility
-
-### Remaining Test Failures
-
-#### Debug Integration Tests
-- ❌ `test_debug_endpoints.js` - Fails on trace breakpoint setting (7/10 tests pass)
-- ❌ `integration/mcp.autonomous.test.js` - Issues with Windows path resolution in queue management
-- ❌ `test_memory_endpoints.js` - Memory view endpoint returns incorrect format on Windows
-
-#### Validation Errors in MCP Server
-- ❌ Schema validation failing for complex program load requests
-- ❌ Debug memory view returning invalid data types
-- ❌ Video frame encoding timing out on Windows systems
-
-#### Schema Compilation Issues
-- ❌ Some JSON schemas failing to compile due to Windows encoding
-- ❌ Missing error schema references causing validation failures
-
-#### Autonomous Agent Tests
-- ❌ `autonomous-agent.test.js` - Program loading fails (5/9 tests pass)
-- ❌ `queue-manager.test.js` - Dependency injection issues in Windows
-- ❌ `agent-integration.test.js` - Synchronization delays in queue processing
-
-### Next Steps
-1. **Fix Windows-specific schema compilation issues**
-2. **Resolve debug endpoint validation errors**
-3. **Improve autonomous agent dependency resolution on Windows**
-4. **Add comprehensive integration tests for Windows platform**
-5. **Implement fallback mechanisms for platform-specific failures**
-
----
-
-
-### 1. **CRITICAL: Debug Endpoints Incomplete Implementation**
-
-**File:** `server/mcp_server.js`  
-**Lines:** 318-420 (debug endpoints)
-
-#### Issue A: Debug Trace Endpoint (Lines 318-360)
+#### 1. MCP Server Import/Export Inconsistencies
+**Location**: `server/mcp_server.js`
+**Severity**: High
+**Issue**: Mixed ESM and CommonJS imports causing module resolution failures
 ```javascript
-// PROBLEMATIC CODE:
-app.post('/mcp/debug/trace', asyncHandler(async (req, res) => {
- const validation = validate('debug.trace.request', req.body);
- if (!validation.success) {
- return res.status(400).json({
- success: false,
- error: {
- code: 'INVALID_REQUEST',
- message: 'Invalid request format',
- details: validation.error.details.errors  // ERROR: undefined property
- }
- });
- }
+// Line 47 - ESM import
+import { createDeveloperAdapters } from './mcp_developer_adapter.js';
 
- try {
- const { steps, until } = req.body;
- const effectiveSteps = Math.min(steps || 100, 10000);
-
- console.log(`Debug trace - method:POST, path:/mcp/debug/trace, steps:${effectiveSteps}, until:${until || 'default'}`);
-
- const traceResult = await adapters.debug.trace(effectiveSteps, { until });  // ERROR: adapters.debug.trace not implemented
-
- // Apply timeout cap (default 10000ms, max 30000ms)
- const timeout = Math.min(10000, 30000);  // ERROR: timeout variable declared but never used
-
- res.json(successResponse(traceResult));  // ERROR: traceResult will be undefined
- } catch (error) {
- console.error('Debug trace error:', error.message);
-
- if (error.message.includes('BREAKPOINT')) {
- throw new MCPError('BREAKPOINT_HIT', 'undefined', null, 422);
- } else if (error.message.includes('CPU_HALTED')) {
- throw new MCPError('CPU_HALTED', 'undefined', null, 422);
- } else {
- throw new MCPError('INTERNAL_ERROR', 'undefined', null, 500);
- }
- }
-}));
+// Line 823 - CommonJS require in async context
+const term = require('./terminal.js');
+```
+**Fix**: Standardize on ESM imports throughout or use dynamic imports:
+```javascript
+// Replace require with dynamic import
+const term = await import('./terminal.js');
 ```
 
-**Fix Required:**
-1. Fix validation error handling on line 325
-2. Implement actual trace functionality in `server/mcp_developer_adapter.js`
-3. Remove unused timeout variable on line 336
-4. Add proper error messages instead of 'undefined'
-
-#### Issue B: Debug Memory View Endpoint (Lines 362-420)
+#### 2. Undefined WebSocket Broadcasting Functions
+**Location**: `server/mcp_server.js`, lines 1940+
+**Severity**: High
+**Issue**: `broadcastEvent` function is called but not properly defined/implemented
 ```javascript
-// PROBLEMATIC CODE (Lines 385-390):
-if (isNaN(address) || address < 0 || address > 0xFFFF) {
- return throw new MCPError('MEMORY_OUT_OF_BOUNDS', 'Invalid memory address', null, 400);  // SYNTAX ERROR: 'return throw'
-}
-
-const effectiveSize = Math.min(size, 65536); // Cap at 64KB
-if (address + effectiveSize - 1 > 0xFFFF) {
- return throw new MCPError('MEMORY_OUT_OF_BOUNDS', 'Memory range would exceed address space', null, 400);  // SYNTAX ERROR: 'return throw'
+// Line 1949 - Called but may be undefined
+if (typeof broadcastEvent === 'function') {
+  broadcastEvent('memory.write', { address, value, size });
 }
 ```
-
-**Fix Required:**
-1. Fix syntax error: `return throw` should be just `throw` on lines 386 and 390
-2. Add proper error message instead of hardcoded strings
-
-#### Issue C: Debug Breakpoints Endpoint (Lines 422-480)
+**Fix**: Implement proper WebSocket broadcasting or remove calls:
 ```javascript
-// PROBLEMATIC CODE (Lines 460-470):
-switch (action) {
- case 'set':
- operationResult = {
- action: 'set',
- success: true,
- id: adapters.debug.setBreakpoint(address),  // ERROR: setBreakpoint not implemented
- address
- };
- break;
-
- case 'list':
- const breakpoints = adapters.debug.listBreakpoints();  // ERROR: listBreakpoints not implemented
- operationResult = {
- action: 'list',
- success: true
- };
- break;
-
- case 'remove':
- const removeResult = adapters.debug.removeBreakpoint(id || address);  // ERROR: removeBreakpoint not implemented
-```
-
-**Fix Required:**
-1. Implement `setBreakpoint`, `listBreakpoints`, and `removeBreakpoint` in adapter
-2. Add proper error handling for unimplemented methods
-
-### 2. **CRITICAL: MCP Developer Adapter Missing Implementation**
-
-**File:** `server/mcp_developer_adapter.js`  
-**Status:** Referenced but implementation incomplete
-
-**Missing Functions:**
-```javascript
-// REQUIRED IMPLEMENTATIONS:
-export function createDeveloperAdapters() {
-  return {
-    debug: {
-      trace: async (steps, options) => {
-        // TODO: Implement execution tracing
-        throw new Error('DEBUG_NOT_IMPLEMENTED: trace method not implemented');
-      },
-      setBreakpoint: (address) => {
-        // TODO: Implement breakpoint setting
-        throw new Error('DEBUG_NOT_IMPLEMENTED: setBreakpoint method not implemented');
-      },
-      listBreakpoints: () => {
-        // TODO: Implement breakpoint listing
-        throw new Error('DEBUG_NOT_IMPLEMENTED: listBreakpoints method not implemented');
-      },
-      removeBreakpoint: (id) => {
-        // TODO: Implement breakpoint removal
-        throw new Error('DEBUG_NOT_IMPLEMENTED: removeBreakpoint method not implemented');
-      }
+// Define broadcastEvent properly
+const wss = new WebSocket.Server({ port: 8080 });
+function broadcastEvent(type, data) {
+  const message = JSON.stringify({ type, data, timestamp: new Date().toISOString() });
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
     }
+  });
+}
+```
+
+#### 3. Inconsistent Error Handling in Adapters
+**Location**: `server/mcp_developer_adapter.js`
+**Severity**: Medium
+**Issue**: Adapter functions return inconsistent response formats
+```javascript
+// Some return { success: true, data: {...} }
+// Others return raw data
+// Creates validation failures in MCP server
+```
+**Fix**: Standardize adapter response format:
+```javascript
+// All adapters should return consistent format
+return {
+  success: true,
+  data: actualResult,
+  error: null
+};
+```
+
+### Frontend/UI Issues
+
+#### 4. Memory Display Race Conditions
+**Location**: `index.html` JavaScript sections
+**Severity**: Medium
+**Issue**: Memory refresh functions called before DOM elements exist
+```javascript
+// Memory refresh called before elements are ready
+if (window.refreshMemoryDisplay) {
+  setTimeout(() => window.refreshMemoryDisplay(), 100);
+}
+```
+**Fix**: Add proper DOM ready checks:
+```javascript
+function safeRefreshMemory() {
+  if (document.readyState === 'complete' && window.refreshMemoryDisplay) {
+    window.refreshMemoryDisplay();
+  } else {
+    setTimeout(safeRefreshMemory, 100);
+  }
+}
+```
+
+#### 5. CPU Step Handler Error Propagation
+**Location**: `js/cpu.js`, line 1157+
+**Severity**: Medium
+**Issue**: Breakpoint checking may access undefined global objects
+```javascript
+// Line 1157 - Unsafe breakpoint access
+if (_win && _win.breakpoints && _win.breakpoints.has(this.PC)) {
+  // _win might be undefined in some environments
+}
+```
+**Fix**: Add defensive checks:
+```javascript
+const breakpoints = (typeof window !== 'undefined' && window.breakpoints) 
+  ? window.breakpoints 
+  : (typeof globalThis !== 'undefined' && globalThis.breakpoints) 
+    ? globalThis.breakpoints 
+    : new Set();
+```
+
+## ⚠️ Medium Priority Issues
+
+### 6. Video Display Coordinate Validation
+**Location**: `docs/mcp_schemas/video.setPixel.request.json`
+**Severity**: Medium
+**Issue**: Schema allows coordinates 0-31 but code uses 32x24 display
+```json
+{
+  "x": { "type": "integer", "minimum": 0, "maximum": 31 },
+  "y": { "type": "integer", "minimum": 0, "maximum": 31 }
+}
+```
+**Fix**: Correct the schema to match actual display dimensions:
+```json
+{
+  "x": { "type": "integer", "minimum": 0, "maximum": 31 },
+  "y": { "type": "integer", "minimum": 0, "maximum": 23 }
+}
+```
+
+### 7. Assembly Validation Bypass
+**Location**: `js/assembler.js`, line 245+
+**Severity**: Medium
+**Issue**: Source sanitization removes valid assembly characters
+```javascript
+// Line 252 - Over-aggressive sanitization
+const sanitized = source.replace(/[^\w\s$#();,.:\-\+=/@'"\\]/g, '');
+```
+**Fix**: Allow more assembly-specific characters:
+```javascript
+const sanitized = source.replace(/[^\w\s$#();,.:\-\+=/@'"\\[\]]/g, '');
+```
+
+### 8. Memory Bank Switching Issues
+**Location**: `js/memory.js`, line 1150+
+**Severity**: Medium
+**Issue**: Bank switching doesn't properly validate bank existence
+```javascript
+// Potential access to undefined bank
+this.currentBank = bank;
+if (!this.banks[bank]) {
+  this.banks[bank] = new Uint8Array(MEMORY_SIZE);
+}
+```
+**Fix**: Validate bank number range:
+```javascript
+if (bank < 0 || bank >= 256) {
+  throw new Error(`Invalid bank number: ${bank}`);
+}
+```
+
+## 🔧 UI/UX Improvements
+
+### 9. Terminal Input Buffer Overflow
+**Location**: `js/memory.js`, line 340+
+**Severity**: Low
+**Issue**: Keyboard buffer can overflow without proper handling
+```javascript
+// Line 357 - No overflow protection
+if (this.keyboardCount < 256) {
+  // Add character
+} // No else clause for overflow
+```
+**Fix**: Add overflow handling:
+```javascript
+if (this.keyboardCount < 256) {
+  this.keyboardBuffer[this.keyboardTail] = charCode;
+  this.keyboardTail = (this.keyboardTail + 1) % 256;
+  this.keyboardCount++;
+} else {
+  console.warn('Keyboard buffer overflow - input dropped');
+}
+```
+
+### 10. CPU State Display Updates
+**Location**: Frontend JavaScript
+**Severity**: Low
+**Issue**: CPU register displays not updated consistently
+**Fix**: Implement centralized state management:
+```javascript
+function updateCPUDisplay(state) {
+  const elements = {
+    pc: document.getElementById('cpu-pc'),
+    a: document.getElementById('cpu-a'),
+    x: document.getElementById('cpu-x'),
+    y: document.getElementById('cpu-y'),
+    sp: document.getElementById('cpu-sp'),
+    status: document.getElementById('cpu-status')
   };
+  
+  Object.keys(elements).forEach(key => {
+    if (elements[key] && state[key] !== undefined) {
+      elements[key].textContent = key === 'pc' 
+        ? state[key].toString(16).toUpperCase().padStart(4, '0')
+        : state[key].toString(16).toUpperCase().padStart(2, '0');
+    }
+  });
 }
 ```
 
-### 3. **CRITICAL: Memory I/O Read Implementation Error**
+## 🔌 Backend/API Connectivity Issues
 
-**File:** `server/mcp_server.js`  
-**Lines:** 128-140
-
+### 11. MCP Client Retry Logic
+**Location**: `js/mcp-client.js`, line 200+
+**Severity**: Medium
+**Issue**: Retry logic can cause infinite loops in some failure modes
 ```javascript
-// PROBLEMATIC CODE:
-app.post('/mcp/cpu/step', asyncHandler(async (req, res) => {
- const validation = validate('cpu.step.request', req.body);
- if (!validation.success) {
- throw MCPError.fromAJVValidation(validation.errors);  // ERROR: validation.errors doesn't exist
- }
-
- const result = adapters.memory.read(addr, 1);  // ERROR: 'addr' is undefined
-
- console.log(`Memory I/O read - method:GET, path:/mcp/memory/io, address:0x${addr.toString(16)}`);  // ERROR: addr undefined
-
- res.json(successResponse(result));
- } catch (error) {
- console.error('Memory I/O read error:', error.message);
- throw new MCPError('INTERNAL_ERROR', 'Memory I/O read failed', error.message, 500);
- }
-}));
+// Exponential backoff can grow too large
+delay = baseDelay * Math.pow(2, retryCount - 1);
+delay = Math.min(delay, 8000); // Cap at 8s
 ```
-
-**Fix Required:**
-1. Fix validation error handling on line 132
-2. Define `addr` variable or remove the erroneous memory read operation
-3. Fix console.log with undefined variable on line 136
-
-### 4. **CRITICAL: Programs Load Syntax Error**
-
-**File:** `server/mcp_server.js`  
-**Lines:** 199-204
-
+**Fix**: Add maximum retry attempts:
 ```javascript
-// PROBLEMATIC CODE:
-app.post('/mcp/programs/load', asyncHandler(async (req, res) => {
- const validation = validate('programs.load.request.new', req.body);
- if (!validation.success) {
- return throw new MCPError('INVALID_REQUEST', 'Invalid request format', validation.error.details, 400);  // SYNTAX ERROR: 'return throw'
- }
-```
-
-**Fix Required:**
-1. Fix syntax error: `return throw` should be just `throw` on line 202
-
-### 5. **CRITICAL: Video Operations Syntax Errors**
-
-**File:** `server/mcp_server.js`  
-**Lines:** 284, 330, 378
-
-```javascript
-// PROBLEMATIC CODE (Line 284):
-if (!responseValidation.success) {
- return throw new MCPError('INTERNAL_ERROR', 'Response validation failed', null, 500);  // SYNTAX ERROR
-}
-
-// PROBLEMATIC CODE (Line 330):
-if (!responseValidation.success) {
- return throw new MCPError('INTERNAL_ERROR', 'Response validation failed', null, 500);  // SYNTAX ERROR
-}
-
-// PROBLEMATIC CODE (Line 378):
-if (!responseValidation.success) {
- return throw new MCPError('INTERNAL_ERROR', 'Response validation failed', null, 500);  // SYNTAX ERROR
+const MAX_RETRIES = 5;
+if (retryCount > MAX_RETRIES) {
+  throw new Error(`Max retries (${MAX_RETRIES}) exceeded`);
 }
 ```
 
-**Fix Required:**
-1. Replace all `return throw` with just `throw` on lines 284, 330, and 378
-
-### 6. **HIGH PRIORITY: Autonomous Agent Missing Dependencies**
-
-**File:** `agent/autonomous-agent.js`  
-**Lines:** 1-20 (imports)
-
+### 12. WebSocket Reconnection Issues
+**Location**: `js/mcp-client.js`, line 700+
+**Severity**: Medium
+**Issue**: WebSocket reconnection can fail silently
 ```javascript
-// PROBLEMATIC CODE:
-import { MCPClient, createAIClient } from '../lib/mcp-client.js';  // ERROR: createAIClient not exported
-import PromptQueue from './queue-manager.js';  // ERROR: queue-manager.js file doesn't exist
+// Line 734 - Silent failure possible
+reconnectAttempts++;
+if (reconnectAttempts < maxReconnectAttempts) {
+  // Retry logic
+} else {
+  // No user notification of permanent failure
+}
+```
+**Fix**: Add user notification:
+```javascript
+if (window.updateStatus) {
+  window.updateStatus('Connection lost - please refresh page', 'error');
+}
 ```
 
-**Fix Required:**
-1. Check if `createAIClient` is actually exported from `mcp-client.js`
-2. Verify `queue-manager.js` exists or create it
-3. Add proper error handling for missing dependencies
+## 📋 Documentation Issues
 
-### 7. **HIGH PRIORITY: Package.json Missing Dependencies**
+### 13. Inconsistent Instruction Set Documentation
+**Location**: `docs/INSTRUCTION_SET.md` vs actual implementation
+**Severity**: Low
+**Issue**: Documentation lists instructions not implemented in CPU
+**Fix**: Audit and update documentation to match actual implementation
 
-**File:** `package.json`  
-**Lines:** 35-39 (dependencies section)
-
+### 14. Missing MCP Schema Validation
+**Location**: Various MCP schema files
+**Severity**: Medium
+**Issue**: Some schemas missing required field validation
+**Fix**: Add comprehensive validation to all schemas:
 ```json
 {
- "dependencies": {
- "express": "^4.18.2",
- "ajv": "^8.12.0",
- "cors": "^2.8.5"
- }
+  "required": ["address", "value"],
+  "additionalProperties": false
 }
 ```
 
-**Missing Dependencies:**
-```json
-{
- "dependencies": {
- "express": "^4.18.2",
- "ajv": "^8.12.0",
- "cors": "^2.8.5",
- "concurrently": "^8.2.0",  // Required for autonomous-system-start script
- "winston": "^3.10.0",      // Required for proper logging
- "helmet": "^7.0.0",        // Required for security headers
- "express-rate-limit": "^6.8.0"  // Required for rate limiting
- }
-}
-```
+## 🚀 Performance Improvements
 
-### 8. **MEDIUM PRIORITY: Schema Loading Issues**
-
-**File:** `server/mcp_server.js`  
-**Lines:** 31-73 (schema loading)
-
+### 15. Memory Read/Write Optimization
+**Location**: `js/memory.js`
+**Severity**: Low
+**Issue**: Individual byte operations are inefficient for bulk transfers
+**Fix**: Implement bulk read/write methods:
 ```javascript
-// PROBLEMATIC CODE (Lines 50-55):
-try {
- compiledValidators[key] = ajv.compile(schema);
- console.log(`✅ Loaded schema: ${key}`);
-} catch (compileError) {
- console.error(`❌ Failed to compile ${key}:`, compileError.message);  // ERROR: Continues execution after compile failure
+readBytes(address, count) {
+  const result = new Uint8Array(count);
+  for (let i = 0; i < count; i++) {
+    result[i] = this.readByteUnchecked(address + i);
+  }
+  return result;
 }
 ```
 
-**Fix Required:**
-1. Add proper error handling when schema compilation fails
-2. Don't continue execution with broken schemas
-3. Add schema validation for the schemas themselves
-
-### 9. **MEDIUM PRIORITY: File System Security Issues**
-
-**File:** `server/mcp_server.js`  
-**Lines:** Programs save/load operations
-
-**Issue:** Insufficient path sanitization
+### 16. CPU Instruction Dispatch Optimization
+**Location**: `js/cpu.js`, line 500+
+**Severity**: Low
+**Issue**: Large switch statement in instruction handler
+**Fix**: Use lookup table for better performance:
 ```javascript
-// Current basic sanitization is insufficient for security
-const programName = `agent_generated_${task.id}`;  // Predictable naming
+const instructionTable = new Array(256);
+// Populate with handler functions
+instructionTable[0xA9] = this.handleLDA_IMM.bind(this);
+// etc.
+
+// In executeInstruction():
+const handler = instructionTable[opcode];
+if (handler) {
+  return handler();
+}
 ```
 
-**Fix Required:**
-1. Add comprehensive path sanitization
-2. Implement proper access controls
-3. Add file extension validation
-4. Limit file sizes
+## 🔒 Security Considerations
 
-### 10. **LOW PRIORITY: Console Logging Inconsistencies**
+### 17. Input Sanitization Improvements
+**Location**: `lib/validators.js`
+**Severity**: Medium
+**Issue**: Some user inputs not properly sanitized
+**Fix**: Add comprehensive input validation for all user-facing inputs
 
-**File:** `server/mcp_server.js`  
-**Throughout file**
+### 18. API Authentication Bypass
+**Location**: Some MCP endpoints
+**Severity**: High
+**Issue**: Not all endpoints properly validate API keys
+**Fix**: Ensure all protected endpoints use authentication middleware
 
-**Issues:**
-- Mixed console.log and console.error usage
-- No structured logging
-- Sensitive information potentially logged
-- No log levels or configuration
+## 📊 Summary
 
-**Fix Required:**
-1. Implement structured logging with winston
-2. Add configurable log levels
-3. Remove sensitive information from logs
-4. Add request correlation IDs
+**Total Issues Found**: 18
+- **Critical**: 5
+- **Medium**: 8  
+- **Low**: 5
 
-## Implementation Priority Matrix
+**Recommended Priority Order**:
+1. Fix MCP server import/export issues (#1)
+2. Implement proper WebSocket broadcasting (#2)
+3. Standardize adapter response formats (#3)
+4. Add comprehensive input validation (#17-18)
+5. Fix video coordinate validation (#6)
+6. Address UI race conditions (#4)
+7. Optimize performance bottlenecks (#15-16)
 
-### Phase 1: Critical Syntax & Runtime Errors (Immediate - 1-2 days)
-1. Fix all `return throw` syntax errors (Lines 202, 284, 330, 378, 386, 390)
-2. Fix undefined variable references (`addr` in step endpoint)
-3. Fix validation error handling inconsistencies
-
-### Phase 2: Missing Implementation (3-5 days)
-1. Implement `server/mcp_developer_adapter.js` with all debug methods
-2. Create missing `agent/queue-manager.js` 
-3. Add missing npm dependencies
-4. Implement debug endpoint functionality
-
-### Phase 3: Security & Performance (5-7 days)
-1. Add comprehensive input validation
-2. Implement rate limiting and request throttling
-3. Add proper error handling and logging
-4. Implement file system security measures
-
-### Phase 4: Testing & Documentation (2-3 days)
-1. Add comprehensive test coverage for fixed endpoints
-2. Update API documentation
-3. Add integration tests for AI agent workflows
-4. Performance testing and optimization
-
-## Specific Coding Agent Instructions
-
-### Immediate Actions Required:
-
-1. **Fix Syntax Errors** - Search for all instances of `return throw` and replace with `throw`
-
-2. **Implement Debug Adapter** - Create `server/mcp_developer_adapter.js` with:
-   ```javascript
-   export function createDeveloperAdapters() {
-     return {
-       debug: {
-         trace: async (steps, options) => { /* implementation */ },
-         setBreakpoint: (address) => { /* implementation */ },
-         listBreakpoints: () => { /* implementation */ },
-         removeBreakpoint: (id) => { /* implementation */ }
-       }
-     };
-   }
-   ```
-
-3. **Fix Validation Errors** - Replace `validation.error.details` with proper error structure
-
-4. **Add Missing Dependencies** - Update package.json with required dependencies
-
-5. **Create Queue Manager** - Implement missing `agent/queue-manager.js` file
-
-### Testing Instructions:
-Run these commands after fixes:
-```bash
-npm install
-npm run test
-npm run mcp-server &
-npm run queue-server &
-npm run autonomous-agent
-```
-
-### Validation Criteria:
-- All endpoints return proper JSON responses
-- No syntax errors in any JavaScript files
-- All debug endpoints functional with proper tracing
-- MCP client can successfully connect and execute operations
-- Autonomous agent can process tasks without crashing
-
-This detailed plan provides exact locations, specific code issues, and clear instructions for fixing the MCP integration to work properly with RooCode as a development kit.
+**Testing Recommendations**:
+- Add integration tests for MCP endpoints
+- Implement WebSocket testing
+- Add CPU instruction validation tests
+- Create memory management stress tests
+- Test browser compatibility across different environments

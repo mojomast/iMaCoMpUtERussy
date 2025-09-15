@@ -31,5 +31,5 @@ This file provides guidance to agents when working with code in this repository.
 - ESM "type": "module" breaks CommonJS; legacy node-fetch v2 used.
 - Jest with ts-jest preset in JS project adds overhead; hybrid tests bypass describe/it (e.g., runTest in [tests/cpu.basic.test.js](tests/cpu.basic.test.js)).
 - jest.setup.js mocks window/videoDisplay/fs; coverage excludes vendor.
-- Child process spawn in [server.js](server.js); no-op WebSocket broadcast.
+- Child process spawn in [server.js](server.js); no-op broadcast functions for future WebSocket support.
 - Atomic backups in agent queue; Windows path issues in tests.

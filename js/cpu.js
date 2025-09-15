@@ -16,6 +16,11 @@ if (_win && _win.breakpoints) {
     breakpoints = _win.breakpoints;
 }
 
+// Attach local breakpoints to window for external access
+if (_win && !_win.breakpoints) {
+    _win.breakpoints = breakpoints;
+}
+
 import { iMaCoMpUtERussyMemory } from './memory.js';
 
 // Memory map constants
@@ -55,6 +60,22 @@ export class iMaCoMpUtERussyCPU {
     constructor({ memory } = {}) {
         this.memory = memory || new iMaCoMpUtERussyMemory();
         this.pendingIRQ = false; // Hardware interrupt pending flag
+
+        // Instruction caching for performance optimization
+        this.instructionCache = new Map(); // opcode -> cached handler function
+        this.cacheHits = 0;
+        this.cacheMisses = 0;
+        this.cacheEnabled = true;
+
+        // Performance monitoring
+        this.performanceStats = {
+            instructionsExecuted: 0,
+            totalCycles: 0,
+            cacheHitRate: 0,
+            startTime: Date.now(),
+            lastResetTime: Date.now()
+        };
+
         this.reset();
     }
 
@@ -82,6 +103,19 @@ export class iMaCoMpUtERussyCPU {
         // Reset vector at 0xFFFC-0xFFFD points to 0x0600
         this.writeByte(0xFFFC, 0x00);
         this.writeByte(0xFFFD, 0x06);
+
+        // Reset instruction cache and performance stats
+        if (this.cacheEnabled) {
+            this.instructionCache.clear();
+            this.cacheHits = 0;
+            this.cacheMisses = 0;
+        }
+
+        // Reset performance monitoring
+        this.performanceStats.instructionsExecuted = 0;
+        this.performanceStats.totalCycles = 0;
+        this.performanceStats.cacheHitRate = 0;
+        this.performanceStats.lastResetTime = Date.now();
     }
 
     /**
@@ -317,7 +351,7 @@ export class iMaCoMpUtERussyCPU {
     }
 
     /**
-     * Execute a single instruction and advance PC
+     * Execute a single instruction and advance PC with caching optimization
      * @returns {number} Cycles used (approximate, not cycle-accurate)
      */
     executeInstruction() {
@@ -326,14 +360,43 @@ export class iMaCoMpUtERussyCPU {
         const opcode = this.readByte(this.PC++);
         let cycles = 1; // Base cycles, not accurate
 
-        // Use opcode table for dispatch (to be populated with all instructions)
-        const instructionHandlers = this.getInstructionHandlers();
-        const handler = instructionHandlers[opcode];
+        // Performance monitoring
+        this.performanceStats.instructionsExecuted++;
+
+        // Instruction caching for performance optimization
+        let handler;
+        if (this.cacheEnabled) {
+            handler = this.instructionCache.get(opcode);
+            if (handler) {
+                this.cacheHits++;
+            } else {
+                this.cacheMisses++;
+                // Get handler from table and cache it
+                const instructionHandlers = this.getInstructionHandlers();
+                handler = instructionHandlers[opcode];
+                if (handler) {
+                    // Bind handler to this instance for proper context
+                    this.instructionCache.set(opcode, handler.bind(this));
+                }
+            }
+        } else {
+            // Fallback to direct lookup without caching
+            const instructionHandlers = this.getInstructionHandlers();
+            handler = instructionHandlers[opcode];
+        }
+
         if (handler) {
-            cycles = handler.call(this);
+            try {
+                cycles = handler.call(this);
+                this.performanceStats.totalCycles += cycles;
+            } catch (error) {
+                console.error(`Instruction execution error for opcode 0x${opcode.toString(16).padStart(2, '0')}:`, error);
+                // Continue execution but log error
+                throw error;
+            }
         } else {
             console.warn(`Unknown opcode 0x${opcode.toString(16).padStart(2, '0')} at PC 0x${(this.PC - 1).toString(16).padStart(4, '0')}`);
-            // Treat as NOP
+            // Treat as NOP but log for debugging
         }
 
         return cycles;
@@ -417,11 +480,13 @@ export class iMaCoMpUtERussyCPU {
             // Store Accumulator (STA)
             0x8D: () => { // absolute
                 const addr = this.getAddressOrValue('abs');
+                try { if ((addr & 0xFFFF) === 0xF1) console.log(`[cpu] STA absolute writing to $F1 value=0x${(this.A & 0xFF).toString(16)}`); } catch(e){}
                 this.writeByte(addr, this.A);
                 return 4;
             },
             0x85: () => { // zero page
                 const addr = this.getAddressOrValue('zp');
+                try { if ((addr & 0xFFFF) === 0xF1) console.log(`[cpu] STA zero-page writing to $F1 value=0x${(this.A & 0xFF).toString(16)}`); } catch(e){}
                 this.writeByte(addr, this.A);
                 return 3;
             },
@@ -1125,8 +1190,12 @@ export class iMaCoMpUtERussyCPU {
                 console.log(`HLT: CPU halted at PC=0x${this.PC.toString(16).toUpperCase()}`);
                 
                 // Update UI status
-                if (typeof _win?.updateStatus === 'function') {
-                    _win.updateStatus('CPU HALTED - Program completed', 'success');
+                if (_win && typeof _win.updateStatus === 'function') {
+                    try {
+                        _win.updateStatus('CPU HALTED - Program completed', 'success');
+                    } catch (error) {
+                        console.warn('Failed to update status:', error.message);
+                    }
                 }
                 
                 // MCP event
@@ -1151,11 +1220,15 @@ export class iMaCoMpUtERussyCPU {
         if (!this.running) return 0;
 
         // Check for breakpoint before executing instruction
-        if (_win && _win.breakpoints && _win.breakpoints.has(this.PC)) {
+        if (_win && _win.breakpoints && typeof _win.breakpoints.has === 'function' && _win.breakpoints.has(this.PC)) {
             console.log(`Breakpoint hit at PC=0x${this.PC.toString(16).toUpperCase()}`);
             this.running = false; // Stop execution on breakpoint
             if (typeof _win.updateStatus === 'function') {
-                _win.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
+                try {
+                    _win.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
+                } catch (error) {
+                    console.warn('Failed to update status:', error.message);
+                }
             }
             return 0;
         }
@@ -1172,7 +1245,7 @@ export class iMaCoMpUtERussyCPU {
         const cycles = this.executeInstruction();
 
         // Update video display if executing in video ROM range 0x8000-0x9FFF
-        if (this.PC >= 0x8000 && this.PC <= 0x9FFF && _win?.videoManager?.videoUpdate) {
+        if (this.PC >= 0x8000 && this.PC <= 0x9FFF && _win?.videoManager?.videoUpdate && typeof _win.videoManager.videoUpdate === 'function') {
             try {
                 _win.videoManager.videoUpdate();
             } catch (error) {
@@ -1181,11 +1254,15 @@ export class iMaCoMpUtERussyCPU {
         }
 
         // Check for breakpoint after instruction execution
-        if (_win && _win.breakpoints && _win.breakpoints.has(this.PC)) {
+        if (_win && _win.breakpoints && typeof _win.breakpoints.has === 'function' && _win.breakpoints.has(this.PC)) {
             console.log(`Breakpoint hit at PC=0x${this.PC.toString(16).toUpperCase()} after instruction`);
             this.running = false;
             if (typeof _win.updateStatus === 'function') {
-                _win.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
+                try {
+                    _win.updateStatus(`Breakpoint hit at 0x${this.PC.toString(16).toUpperCase()}`, 'warning');
+                } catch (error) {
+                    console.warn('Failed to update status:', error.message);
+                }
             }
             return cycles;
         }
@@ -1297,8 +1374,12 @@ export class iMaCoMpUtERussyCPU {
                         // Accumulate cycles if tracking, but for simplicity just count instructions
                     } catch (error) {
                         console.error('CPU execution error:', error);
-                        if (_win && _win.logToMCP) {
-                            _win.logToMCP('error', `CPU execution failed at step ${steps}: ${error.message}`);
+                        if (_win && typeof _win.logToMCP === 'function') {
+                            try {
+                                _win.logToMCP('error', `CPU execution failed at step ${steps}: ${error.message}`);
+                            } catch (error) {
+                                console.warn('Failed to log to MCP:', error.message);
+                            }
                         }
                         this.running = false;
                         throw error;
@@ -1324,6 +1405,69 @@ export class iMaCoMpUtERussyCPU {
     }
 
     /**
+     * Get current performance statistics
+     * @returns {Object} Performance metrics
+     */
+    getPerformanceStats() {
+        const totalCacheAccesses = this.cacheHits + this.cacheMisses;
+        const cacheHitRate = totalCacheAccesses > 0 ? (this.cacheHits / totalCacheAccesses) * 100 : 0;
+        const runtimeMs = Date.now() - this.performanceStats.startTime;
+        const mips = runtimeMs > 0 ? (this.performanceStats.instructionsExecuted / runtimeMs) * 1000 : 0;
+
+        return {
+            instructionsExecuted: this.performanceStats.instructionsExecuted,
+            totalCycles: this.performanceStats.totalCycles,
+            cacheHits: this.cacheHits,
+            cacheMisses: this.cacheMisses,
+            cacheHitRate: Math.round(cacheHitRate * 100) / 100,
+            runtimeMs,
+            mips: Math.round(mips * 100) / 100,
+            averageCyclesPerInstruction: this.performanceStats.instructionsExecuted > 0 ?
+                Math.round((this.performanceStats.totalCycles / this.performanceStats.instructionsExecuted) * 100) / 100 : 0
+        };
+    }
+
+    /**
+     * Enable or disable instruction caching
+     * @param {boolean} enabled - Whether to enable caching
+     */
+    setCacheEnabled(enabled) {
+        this.cacheEnabled = enabled;
+        if (!enabled) {
+            this.instructionCache.clear();
+            this.cacheHits = 0;
+            this.cacheMisses = 0;
+        }
+        console.log(`Instruction cache ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    /**
+     * Clear instruction cache and reset cache statistics
+     */
+    clearCache() {
+        this.instructionCache.clear();
+        this.cacheHits = 0;
+        this.cacheMisses = 0;
+        console.log('Instruction cache cleared');
+    }
+
+    /**
+     * Get cache statistics
+     * @returns {Object} Cache performance metrics
+     */
+    getCacheStats() {
+        const totalAccesses = this.cacheHits + this.cacheMisses;
+        return {
+            cacheSize: this.instructionCache.size,
+            cacheHits: this.cacheHits,
+            cacheMisses: this.cacheMisses,
+            totalAccesses,
+            hitRate: totalAccesses > 0 ? (this.cacheHits / totalAccesses) * 100 : 0,
+            enabled: this.cacheEnabled
+        };
+    }
+
+    /**
      * Cleanup CPU state and memory references after emulation session
      * Explicitly dereferences state for garbage collection
      */
@@ -1339,6 +1483,11 @@ export class iMaCoMpUtERussyCPU {
         this.PC = null;
         this.P = null;
 
+        // Clear instruction cache
+        if (this.instructionCache) {
+            this.instructionCache.clear();
+        }
+
         // Clear memory reference if it was internally created
         if (this.memory && !this.memory.readByte && !this.memory.writeByte && Array.isArray(this.memory)) {
             // Internal array memory - can be nulled
@@ -1347,5 +1496,9 @@ export class iMaCoMpUtERussyCPU {
             // External memory object - just dereference
             this.memory = null;
         }
+
+        // Log final performance stats before cleanup
+        const finalStats = this.getPerformanceStats();
+        console.log('CPU cleanup - Final performance stats:', finalStats);
     }
 }
