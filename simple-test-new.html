@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iMaCoMpUtERussy Simple Test</title>
+    <link rel="stylesheet" href="css/retro-theme.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+    <div id="main-layout">
+        <!-- Simple debugger panel -->
+        <div id="debugger" class="panel">
+            <div class="panel-header">
+                <span>Debugger</span>
+            </div>
+            <div class="panel-content">
+                <div id="debugger-content">Loading debugger...</div>
+            </div>
+        </div>
+        
+        <!-- Simple memory viewer panel -->
+        <div id="memory-viewer" class="panel">
+            <div class="panel-header">
+                <span>Memory Viewer</span>
+            </div>
+            <div class="panel-content">
+                <div id="memory-content">Loading memory viewer...</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bottom toolbar -->
+    <div id="panel-toolbar" style="position: fixed; bottom: 0; left: 0; right: 0; background: #000; border-top: 1px solid #00ff00; padding: 10px; display: flex; gap: 20px;">
+        <label class="toolbar-toggle">
+            <input type="checkbox" id="toggle-debugger" checked data-panel="debugger">
+            <span class="toggle-label">Debugger</span>
+        </label>
+        <label class="toolbar-toggle">
+            <input type="checkbox" id="toggle-memory" checked data-panel="memory-viewer">
+            <span class="toggle-label">Memory</span>
+        </label>
+    </div>
+    
+    <script type="module">
+        console.log('🚀 Starting simple test...');
+        
+        // Test if we can import and initialize individual modules
+        async function testModules() {
+            try {
+                console.log('Testing debugger module...');
+                const debuggerModule = await import('./js/ui/debugger.js');
+                console.log('✓ Debugger module imported');
+                
+                // Try to initialize
+                debuggerModule.initializeDebugger('debugger');
+                document.getElementById('debugger-content').innerHTML = '<div style="color: #44ff44;">✓ Debugger initialized</div>';
+                console.log('✓ Debugger initialized');
+                
+            } catch (error) {
+                console.error('❌ Debugger error:', error);
+                document.getElementById('debugger-content').innerHTML = `<div style="color: #ff4444;">❌ Error: ${error.message}</div>`;
+            }
+            
+            try {
+                console.log('Testing memory viewer module...');
+                const memoryModule = await import('./js/ui/memory-viewer.js');
+                console.log('✓ Memory viewer module imported');
+                
+                // Try to initialize
+                memoryModule.initializeMemoryViewer('memory-viewer');
+                document.getElementById('memory-content').innerHTML = '<div style="color: #44ff44;">✓ Memory viewer initialized</div>';
+                console.log('✓ Memory viewer initialized');
+                
+            } catch (error) {
+                console.error('❌ Memory viewer error:', error);
+                document.getElementById('memory-content').innerHTML = `<div style="color: #ff4444;">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Test MCP connection
+        async function testMCP() {
+            try {
+                const response = await fetch('http://localhost:8001/health');
+                const data = await response.json();
+                console.log('✓ MCP Server connected:', data);
+            } catch (error) {
+                console.error('❌ MCP connection failed:', error);
+            }
+        }
+        
+        // Run tests when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                testMCP();
+                testModules();
+            });
+        } else {
+            testMCP();
+            testModules();
+        }
+        
+        // Simple toolbar functionality
+        document.querySelectorAll('#panel-toolbar input[type="checkbox"]').forEach(toggle => {
+            toggle.addEventListener('change', (e) => {
+                const panelId = e.target.dataset.panel;
+                const panel = document.getElementById(panelId);
+                if (panel) {
+                    panel.style.display = e.target.checked ? 'flex' : 'none';
+                    console.log(`Panel ${panelId} ${e.target.checked ? 'shown' : 'hidden'}`);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -56,7 +56,7 @@ export class iMaCoMpUtERussyMemory {
    * @param {Uint8Array} [options.buffer] - Optional backing buffer (must be length 65536).
    * @param {boolean} [options.readonlyROM=false] - If true, ROM writes throw; otherwise they are ignored and a warning is logged.
    */
-  constructor({ buffer, readonlyROM = false, allowRomWrites = false } = {}) {
+  constructor({ buffer, readonlyROM = false, allowRomWrites = false, debugMode = false } = {}) {
     if (buffer) {
       if (!(buffer instanceof Uint8Array) || buffer.length !== MEMORY_SIZE) {
         throw new Error('buffer must be a Uint8Array of length ' + MEMORY_SIZE);
@@ -88,6 +88,8 @@ export class iMaCoMpUtERussyMemory {
   this.readonlyROM = !!readonlyROM;
   // allowRomWrites bypasses ROM write-ignore behavior (useful for tests)
   this.allowRomWrites = !!allowRomWrites;
+  // debugMode controls verbose logging for ROM writes and memory operations
+  this.debugMode = !!debugMode;
     this._writeListeners = new Set();
     this._readListeners = new Set();
 
@@ -118,6 +120,7 @@ export class iMaCoMpUtERussyMemory {
     this.mmioHandlers.set(0xF0, {
       read: () => {
         if (this.keyboardCount === 0) {
+          // Return 0 silently when buffer is empty to avoid spam
           return 0; // No input available
         }
         const char = this.keyboardBuffer[this.keyboardHead];
@@ -360,18 +363,22 @@ export class iMaCoMpUtERussyMemory {
         currentBuffer[i] = romBuffer[i];
       }
       this.modifiedBanks.add(this.currentBank);
-      console.log(`CoW: Copied ROM to bank ${this.currentBank}`);
+      // Only log CoW operation once per bank, not every write
+      if (this.debugMode) {
+        console.log(`CoW: Copied ROM to bank ${this.currentBank}`);
+      }
     }
 
-    const msg = `Write to ROM at 0x${addr.toString(16).padStart(4, '0')}: 0x${value.toString(16).padStart(2, '0')} (CoW enabled)`;
-    
+    // Only show ROM write warnings in debug mode to reduce noise
     if (this.readonlyROM && !this.allowRomWrites) {
-      if (typeof console !== 'undefined' && console.warn) {
-        console.warn(msg.replace('CoW enabled', 'forbidden (readonlyROM=true)'));
+      if (this.debugMode && typeof console !== 'undefined' && console.warn) {
+        const msg = `Write to ROM at 0x${addr.toString(16).padStart(4, '0')}: forbidden (readonlyROM=true)`;
+        console.warn(msg);
       }
       return false;
-    } else if (!this.allowRomWrites) {
+    } else if (!this.allowRomWrites && this.debugMode) {
       if (typeof console !== 'undefined' && console.warn) {
+        const msg = `Write to ROM at 0x${addr.toString(16).padStart(4, '0')}: 0x${value.toString(16).padStart(2, '0')} (CoW enabled)`;
         console.warn(msg);
       }
     }

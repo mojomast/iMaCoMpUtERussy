@@ -302,7 +302,7 @@ export function assemble(source, options = {}) {
       if (dir === 'org') {
         const addr = parseNumber(parts[1]);
         currentPC = addr;
-      } else if (dir === 'byte') {
+      } else if (dir === 'byte' || dir === 'db') {
         const values = parts.slice(1).join(' ').split(',').map(v => v.trim());
         currentPC += values.length;
       } else {
@@ -370,7 +370,7 @@ export function assemble(source, options = {}) {
       if (dir === 'org') {
         const addr = parseNumber(parts[1]);
         currentPC = addr;
-      } else if (dir === 'byte') {
+      } else if (dir === 'byte' || dir === 'db') {
         const values = parts.slice(1).join(' ').split(',').map(v => v.trim());
         for (const v of values) {
           const val = resolveValue(v, labels);

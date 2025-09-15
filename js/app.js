@@ -1,5 +1,3 @@
-/* global initializeSettingsPanel */
-
 // Use browser-compatible MCP client (imports work in browser)
 let initializeMCPIntegration;
 try {
@@ -24,12 +22,14 @@ import { initializeMemoryViewer } from './ui/memory-viewer.js';
 import { initializeVideoManager } from './ui/video-manager.js';
 import { initializeNaturalLanguageInput } from './ui/natural-language-input.js';
 import { initializeAssemblyPanel } from './ui/assembly-panel.js';
+import { initializeSettingsPanel } from './ui/settings.js';
 import { ConsoleUI } from './ui/console.js';
 import VoiceControlSystem from './ui/voice-control.js';
 import { UIFeedbackSystem } from './ui/feedback-system.js';
 import LayoutManager from './ui/layout-manager.js';
 import { MCPError } from '../server/mcp_errors.js';
 import { timeoutFetch } from './mcp-client.js';
+import { VideoDisplay } from './ui/video-display.js';
 
 /**
  * Initialize MCP client with error handling
@@ -580,6 +580,8 @@ async function initializeApp() {
         const consoleElement = document.getElementById('console');
         console.log('Console element found:', !!consoleElement);
         if (consoleElement) {
+            console.log('Creating ConsoleUI instance...');
+            window.consoleUI = new ConsoleUI();
             console.log('Calling consoleUI.initialize...');
             window.consoleUI.initialize('console');
             
@@ -597,6 +599,31 @@ async function initializeApp() {
             console.log('✓ Console initialized with layout integration');
         } else {
             console.warn('⚠ Console element not found');
+        }
+
+        // Set up window.terminal bridge to connect MMIO writes to ConsoleUI
+        if (window.consoleUI && window.consoleUI.writeOutput) {
+            window.terminal = {
+                write: (text) => window.consoleUI.writeOutput(text)
+            };
+            console.log('✓ Terminal bridge established: window.terminal -> ConsoleUI.writeOutput');
+            
+            // Connect console to the shared memory instance from debugger
+            import('./ui/debugger.js').then(debuggerModule => {
+                if (debuggerModule.memory) {
+                    window.consoleUI.memory = debuggerModule.memory;
+                    console.log('✅ Console connected to shared memory instance');
+                    
+                    // Enable debug logging for terminal I/O troubleshooting
+                    if (debuggerModule.memory.debugMode !== undefined) {
+                        debuggerModule.memory.debugMode = false; // Keep quiet by default
+                    }
+                } else {
+                    console.warn('⚠ Could not connect console to shared memory - debugger memory not available');
+                }
+            }).catch(err => {
+                console.warn('Could not import debugger module for memory connection:', err);
+            });
         }
     
         // Global keyboard input handler for I/O

@@ -100,6 +100,15 @@ End-to-end validation of AI-emulator interactions:
 - **Health Monitoring**: System status and metric collection
 - **CI/CD Integration**: Automated testing in deployment pipelines
 ## Recent Updates
+
+### 2025-09-15: Video Display & UI Layout Improvements
+- **Video Display System**: Fixed VideoDisplay class integration - video demos now render properly to 256x192 canvas
+- **Memory Viewer Panel**: Increased width to 600px to eliminate horizontal scrolling in hex display
+- **Memory Region Toggles**: Restored functionality of Zero Page, Stack, I/O, Program, Video, High region buttons
+- **Assembler Enhancements**: Added support for both `.db` and `.byte` directives for data definitions
+- **Responsive Design**: Updated breakpoints and layout for better memory viewer usability across screen sizes
+- **VUP Instruction**: Confirmed Video Update instruction (0xAB) properly renders memory-mapped graphics
+
 ### 2025-09-06: Documentation & Development Process Improvements
 - Enhanced README with emulator-specific setup instructions, UI feature documentation, and usage examples
 - Created comprehensive ARCHITECTURE.md documenting code structure, data flow, and extension points
@@ -172,14 +181,27 @@ npm run autonomous-system-start
    - Watch Memory Viewer update with program at $0600
    - Click "Run" to execute - see output in Interactive Terminal
 
-2. **Step-Through Debugging**:
+2. **Video Graphics Demo**:
+   - Select "Video Demo" from sample programs dropdown
+   - Click Load - program loads video buffer demo
+   - Click "Run" to execute
+   - Watch Video Display panel show crosshair pattern on 256x192 canvas
+   - Memory Viewer shows video buffer data at $0200-$05FF region
+
+3. **Step-Through Debugging**:
    - Load any program using Assembly Panel
    - Click "Step" button repeatedly
    - Watch Registers panel: PC advances, A register changes
-   - Observe Memory Viewer: data locations update
+   - Observe Memory Viewer: data locations update with wider, easier-to-read hex display
    - Set breakpoint at $060A, then Run - execution pauses at breakpoint
 
-3. **File I/O Operations**:
+4. **Memory Region Navigation**:
+   - Use Memory Viewer region toggle buttons: Zero Page, Stack, I/O, Program, Video, High
+   - Click toggles to show/hide specific memory regions
+   - Watch I/O region ($0200-$02FF) during video demos to see pixel data
+   - Program region shows loaded assembly code at $0600-$07FF
+
+5. **File I/O Operations**:
    - Click "Load Assembly File" in Debugger Panel
    - Select your .asm file (e.g., custom program)
    - Program assembles and loads automatically

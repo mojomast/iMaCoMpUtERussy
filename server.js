@@ -84,7 +84,7 @@ function startMCPServer() {
   return new Promise((resolve, reject) => {
     console.log('Starting MCP Server...');
 
-    mcpChildProcess = spawn('node', ['server/mcp_server.js'], {
+    mcpChildProcess = spawn(process.execPath, ['server/mcp_server.js'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PORT: resolvedPorts.MCP },
       cwd: __dirname

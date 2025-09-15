@@ -492,11 +492,39 @@ button.loading::after {
     padding: 10px;
     border: 1px solid #00ff00;
     overflow: auto;
-    max-height: 800px;
+    max-height: 1200px;
     width: 100%;
     box-sizing: border-box;
     white-space: pre;
     word-wrap: break-word;
+}
+
+/* Memory region styling for multi-region viewer */
+.memory-region {
+    margin-bottom: 15px;
+    border: 2px solid #00ff00;
+    border-radius: 4px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.9);
+}
+
+.memory-region h3 {
+    margin: 0 0 10px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid currentColor;
+}
+
+.memory-content {
+    max-height: 600px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.2;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 5px;
+    border: 1px solid rgba(0, 255, 0, 0.3);
 }
 
 /* Debugger Controls */
@@ -654,7 +682,7 @@ button.loading::after {
     padding: 10px;
     border: 1px solid #00ff00;
     overflow: auto;
-    max-height: 400px; /* Set max height for dashboard */
+    max-height: 800px; /* Set max height for dashboard */
     box-sizing: border-box;
     white-space: pre;
     word-wrap: break-word;

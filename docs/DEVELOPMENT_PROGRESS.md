@@ -137,13 +137,14 @@
 
 ### Fully Functional Features
 - Complete 8-bit CPU emulation with accurate instruction execution
-- Assembly language compilation with expression evaluation
-- Interactive program development and debugging
-- Real-time terminal I/O for program interaction
-- **Video graphics display with 32×24 pixel resolution**
-- **Memory-mapped graphics programming with 4-color palette**
-- Memory visualization and monitoring
-- Educational sample programs with documentation
+- Assembly language compilation with expression evaluation and both `.db` and `.byte` directive support
+- Interactive program development and debugging with step-through execution
+- Real-time terminal I/O for program interaction with memory-mapped I/O
+- **Working video graphics display with 32×24 pixel resolution and real-time canvas rendering**
+- **Memory-mapped graphics programming with 4-color palette and VUP instruction support**
+- **Optimized memory visualization with wider display panel and working region toggles**
+- **Responsive UI layout with proper panel sizing and no horizontal scrolling**
+- Educational sample programs with documentation including working video demos
 
 ### Development Ready Features
 - Video steganography core algorithms
@@ -162,9 +163,11 @@
 ## 📈 Testing Status
 - **CPU Tests**: 38 passed, 0 failed ✅
 - **Memory Tests**: 29 passed, 0 failed ✅  
-- **Assembler Tests**: All advanced features working ✅
+- **Assembler Tests**: All advanced features working including .db/.byte directives ✅
 - **Integration Tests**: Steganography and compression functional ✅
 - **Interactive Terminal**: Manual testing successful ✅
+- **Video Display**: Video demo programs working with VUP instruction ✅
+- **UI Layout**: Memory viewer responsive design and region toggles functional ✅
 ### 2025-09-04: Phase 1.1 Completion
 Implemented robust server startup sequence with port resolution and graceful shutdowns across MCP, Queue, and UI services. Added SIGINT/SIGTERM handlers for clean resource cleanup. Created lib/port-utils.js for port availability checks.
 
@@ -188,3 +191,26 @@ Completed core emulator improvements: added Run/Step/Stop/Reset controls, file l
 
 ### 2025-09-06: Documentation Improvements
 Implemented documentation improvements: updated README, architecture docs, usage examples, dev log/changelog, added code comments.
+
+### 2025-09-15: UI Layout and Video Display Fixes
+**UI Layout Enhancements:**
+- **Wider Memory Viewer Panel**: Increased right panel width from 480px to 600px to eliminate horizontal scrolling in memory display
+- **Memory Region Toggle Fixes**: Restored functionality of memory region toggle buttons (Zero Page, Stack, I/O, Program, Video, High)
+- **Responsive Design Updates**: Updated media query breakpoints to accommodate wider memory viewer at different screen sizes
+- **Memory Display Optimization**: Improved hex byte spacing and layout to prevent text wrapping and scrolling issues
+
+**Video Display System Fixes:**
+- **VideoDisplay Class Integration**: Fixed proper initialization of VideoDisplay class instead of fallback object
+- **Video Canvas Rendering**: Restored working video output with proper memory-mapped framebuffer rendering
+- **VUP Instruction Support**: Verified VUP (Video Update) instruction (0xAB) properly calls window.videoDisplay.updateDisplay()
+- **Pattern Display**: Confirmed video demo program correctly displays crosshair and other patterns on 256x192 canvas
+
+**Assembler Directive Support:**
+- **Added .db Directive**: Extended assembler to support both `.db` and `.byte` directives for data byte definitions
+- **Cache-Busting Improvements**: Implemented consistent module cache-busting to prevent intermittent loading issues
+- **Module Loading Fixes**: Fixed dynamic imports with proper cache invalidation for consistent behavior
+
+**Technical Improvements:**
+- **Memory Viewer Width**: Optimized memory display layout to show complete 16-byte rows without horizontal scrolling
+- **Panel Responsiveness**: Enhanced responsive breakpoints for different screen sizes while maintaining usable memory viewer
+- **Video Buffer Integration**: Confirmed proper memory-mapped video buffer operation at $0200-$05FF address range

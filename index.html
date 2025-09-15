@@ -3,131 +3,1388 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>iMaCoMpUtERussy Emulator</title>
+    <title>iMaCoMpUtERussy - 8-bit CPU Emulator</title>
     <link rel="stylesheet" href="css/retro-theme.css">
     <link rel="stylesheet" href="css/components.css">
+    <style>
+        /* Enhanced layout for better UX */
+        body { margin: 0; padding: 0; background: #000; color: #00ff00; font-family: 'Courier New', monospace; }
+        
+        #header { 
+            background: linear-gradient(90deg, #001100, #002200); 
+            padding: 10px 20px; 
+            border-bottom: 2px solid #00ff00; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        
+        #header h1 { margin: 0; color: #00ff00; font-size: 24px; }
+        #header .status { display: flex; gap: 20px; align-items: center; }
+        
+        /* Improved layout: much wider side panels, narrower center */
+        #main-container { 
+            display: grid; 
+            grid-template-columns: 480px 1fr 600px; 
+            grid-template-rows: 1fr; 
+            height: calc(100vh - 120px); 
+            gap: 10px; 
+            padding: 10px; 
+        }
+        
+        #left-panel, #right-panel { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; 
+        }
+        
+        /* Center panel: Video on top, Terminal and AI below */
+        #center-panel { 
+            display: grid; 
+            grid-template-rows: 1fr 1fr 1fr; 
+            gap: 10px; 
+        }
+        
+        .panel { 
+            background: rgba(0, 0, 0, 0.9); 
+            border: 1px solid #00ff00; 
+            border-radius: 4px; 
+            overflow: hidden; 
+            display: flex; 
+            flex-direction: column;
+        }
+        
+        .panel-header { 
+            background: rgba(0, 255, 0, 0.1); 
+            padding: 8px 12px; 
+            border-bottom: 1px solid #00ff00; 
+            font-weight: bold; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-content { 
+            flex: 1; 
+            padding: 10px; 
+            overflow: auto; 
+        }
+        
+        .btn { 
+            background: #001100; 
+            border: 1px solid #00ff00; 
+            color: #00ff00; 
+            padding: 6px 12px; 
+            cursor: pointer; 
+            border-radius: 2px;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        
+        .btn:hover { background: #002200; }
+        .btn:active { background: #003300; }
+        .btn.primary { background: #004400; }
+        .btn.danger { border-color: #ff4444; color: #ff4444; }
+        .btn.danger:hover { background: #220000; }
+        
+        .control-group { 
+            display: flex; 
+            gap: 8px; 
+            margin-bottom: 10px; 
+            flex-wrap: wrap;
+        }
+        
+        .status-good { color: #44ff44; }
+        .status-warn { color: #ffaa00; }
+        .status-error { color: #ff4444; }
+        
+        select, input, textarea { 
+            background: #000; 
+            border: 1px solid #00ff00; 
+            color: #00ff00; 
+            padding: 4px; 
+            font-family: inherit;
+            font-size: 12px;
+        }
+        
+        textarea { resize: vertical; }
+        
+        #console-output, #memory-display, #mcp-log { 
+            background: #000; 
+            border: 1px solid #004400; 
+            padding: 8px; 
+            font-family: 'Courier New', monospace; 
+            font-size: 11px; 
+            overflow-y: auto; 
+            height: 120px;
+        }
+        
+        /* Enhanced memory display */
+        #memory-display { 
+            height: 100%; 
+            font-size: 10px;
+            line-height: 1.2;
+            overflow-x: hidden;
+            overflow-y: auto;
+            word-wrap: break-word;
+        }
+        
+        .memory-controls {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+            line-height: 1.2;
+        }
+        
+        .memory-region {
+            background: #001100;
+            border: 1px solid #004400;
+            padding: 3px 8px;
+            font-size: 10px;
+            cursor: pointer;
+            border-radius: 2px;
+            white-space: nowrap;
+            user-select: none;
+        }
+        
+        .memory-region.active {
+            background: #004400;
+            border-color: #00aa00;
+            color: #fff;
+        }
+        
+        .memory-region:hover {
+            background: #002200;
+            border-color: #006600;
+        }
+        
+        .memory-section {
+            margin-bottom: 8px;
+            border-bottom: 1px solid #004400;
+            padding-bottom: 4px;
+        }
+        
+        .memory-section-title {
+            color: #ffaa00;
+            font-weight: bold;
+            font-size: 11px;
+            margin-bottom: 3px;
+        }
+        
+        #video-canvas { 
+            border: 1px solid #00ff00; 
+            background: #000; 
+            display: block; 
+            margin: 0 auto;
+            max-width: 90%;
+            max-height: 140px;
+            width: auto;
+            height: auto;
+        }
+        
+        .register-display { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 8px; 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px;
+        }
+        
+        .register-item { 
+            background: #001100; 
+            border: 1px solid #004400; 
+            padding: 4px 8px; 
+            border-radius: 2px;
+        }
+        
+        #footer { 
+            background: #001100; 
+            border-top: 1px solid #00ff00; 
+            padding: 8px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            font-size: 12px;
+        }
+        
+        .load-error { color: #ff4444; font-size: 12px; margin-top: 5px; }
+        .load-success { color: #44ff44; font-size: 12px; margin-top: 5px; }
+        
+        /* Terminal styling */
+        #terminal-panel .panel-content { padding: 5px; }
+        #console-output { 
+            height: 120px;
+            max-height: 120px;
+            min-height: 80px; 
+            background: #000; 
+            border: 1px solid #00ff00; 
+            padding: 5px; 
+            margin-bottom: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            overflow-y: auto;
+            overflow-x: hidden;
+            color: #00ff00;
+        }
+        
+        @media (max-width: 1800px) {
+            #main-container { 
+                grid-template-columns: 440px 1fr 560px; 
+            }
+        }
+        
+        @media (max-width: 1600px) {
+            #main-container { 
+                grid-template-columns: 400px 1fr 520px; 
+            }
+        }
+        
+        @media (max-width: 1400px) {
+            #main-container { 
+                grid-template-columns: 380px 1fr 480px; 
+            }
+        }
+        
+        @media (max-width: 1200px) {
+            #main-container { 
+                grid-template-columns: 1fr; 
+                grid-template-rows: auto auto auto; 
+                height: auto;
+            }
+            #left-panel, #right-panel { 
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+                grid-template-rows: auto;
+            }
+        }
+    </style>
 </head>
 <body>
-    <div id="main-layout">
-        <!-- Existing panels like debugger, memory-viewer, etc. -->
-        <div id="debugger" class="panel">
-            <div class="panel-header">
-                <span>Debugger</span>
-            </div>
-            <div class="panel-content">
-                <!-- Debugger content -->
-            </div>
+    <!-- Header -->
+    <div id="header">
+        <h1>🎮 iMaCoMpUtERussy</h1>
+        <div class="status">
+            <div>MCP: <span id="mcp-status" class="status-warn">Connecting...</span></div>
+            <div>CPU: <span id="cpu-status" class="status-warn">Initializing...</span></div>
+            <div>Memory: <span id="memory-status" class="status-warn">Loading...</span></div>
         </div>
-        
-        <div id="memory-viewer" class="panel">
-            <div class="panel-header">
-                <span>Memory Viewer</span>
+    </div>
+
+    <!-- Main Container -->
+    <div id="main-container">
+        <!-- Left Panel: Controls & Assembly -->
+        <div id="left-panel">
+            <!-- CPU Controls -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>🔧 CPU Controls</span>
+                </div>
+                <div class="panel-content">
+                    <div class="control-group">
+                        <button class="btn primary" onclick="stepCPU()">Step</button>
+                        <button class="btn" onclick="runCPU()">Run</button>
+                        <button class="btn danger" onclick="resetCPU()">Reset</button>
+                        <button class="btn" onclick="stopCPU()">Stop</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Speed:</label>
+                        <select id="cpu-speed">
+                            <option value="1">1 Hz</option>
+                            <option value="10">10 Hz</option>
+                            <option value="100" selected>100 Hz</option>
+                            <option value="1000">1 kHz</option>
+                        </select>
+                    </div>
+                    
+                    <div id="cpu-registers" class="register-display">
+                        <div class="register-item">PC: <span id="reg-pc">0000</span></div>
+                        <div class="register-item">A: <span id="reg-a">00</span></div>
+                        <div class="register-item">X: <span id="reg-x">00</span></div>
+                        <div class="register-item">Y: <span id="reg-y">00</span></div>
+                        <div class="register-item">SP: <span id="reg-sp">FF</span></div>
+                        <div class="register-item">Status: <span id="reg-status">00</span></div>
+                    </div>
+                </div>
             </div>
-            <div class="panel-content">
-                <!-- Memory viewer content -->
+
+            <!-- Program Manager -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>📁 Program Manager</span>
+                </div>
+                <div class="panel-content">
+                    <div class="control-group">
+                        <select id="sample-programs" style="flex: 1;">
+                            <option value="">Select a sample...</option>
+                            <option value="hello-world.asm">Hello World</option>
+                            <option value="fibonacci.asm">Fibonacci</option>
+                            <option value="graphics-demo.asm">Graphics Demo</option>
+                            <option value="hello-terminal.asm">Terminal Demo</option>
+                            <option value="video-demo.asm">Video Demo</option>
+                            <option value="test-simple.asm">Simple Test</option>
+                            <option value="echo.asm">Echo Program</option>
+                        </select>
+                        <button class="btn" onclick="loadSample()">Load</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <button class="btn primary" onclick="assembleAndLoad()">Assemble & Load</button>
+                        <button class="btn" onclick="saveProgram()">Save</button>
+                        <button class="btn" onclick="clearEditor()">Clear</button>
+                    </div>
+                    
+                    <div id="load-status"></div>
+                </div>
             </div>
-        </div>
-        
-        <div id="video-manager" class="panel">
-            <div class="panel-header">
-                <span>Video Manager</span>
-            </div>
-            <div class="panel-content">
-                <!-- Video manager content -->
-            </div>
-        </div>
-        
-        <!-- New MCP Natural Language Input Panel -->
-        <div id="mcp-input-panel" class="panel">
-            <div class="panel-header">
-                <span>MCP Natural Language Input</span>
-            </div>
-            <div class="panel-content">
-                <div class="nl-input-container">
-                    <textarea id="nl-input-textarea" placeholder="Enter natural language command (e.g., 'step the CPU' or 'reset CPU')..." rows="3" style="width: 100%; resize: vertical;"></textarea>
-                    <button id="nl-input-send-btn">Send Command</button>
-                    <div id="nl-input-log" style="margin-top: 10px; height: 100px; overflow-y: auto; border: 1px solid #00ff00; padding: 5px; background: #000; color: #00ff00; font-family: monospace;"></div>
+
+            <!-- Assembly Editor -->
+            <div class="panel" style="flex: 1;">
+                <div class="panel-header">
+                    <span>✏️ Assembly Editor</span>
+                    <span id="editor-status">Ready</span>
+                </div>
+                <div class="panel-content">
+                    <textarea id="assembly-editor" placeholder="Enter assembly code here..." style="width: 100%; height: 100%; min-height: 200px; resize: none; font-size: 11px; line-height: 1.4;"></textarea>
                 </div>
             </div>
         </div>
-        
-        <!-- Console/Terminal Panel -->
-        <div id="console" class="panel">
-            <div class="panel-header">
-                <span>Terminal I/O</span>
+
+        <!-- Center Panel: Video, Terminal & AI -->
+        <div id="center-panel">
+            <!-- Video Display -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>📺 Video Display</span>
+                    <span>256x192</span>
+                </div>
+                <div class="panel-content" style="text-align: center; padding: 10px;">
+                    <canvas id="video-canvas" width="256" height="192"></canvas>
+                    <div style="margin-top: 8px;">
+                        <button class="btn" onclick="clearVideo()">Clear</button>
+                        <button class="btn" onclick="toggleVideoGrid()">Grid</button>
+                        <button class="btn" onclick="saveVideoFrame()">Save Frame</button>
+                    </div>
+                </div>
             </div>
-            <div class="panel-content">
-                <!-- Console content will be populated by JS -->
-                <div style="padding: 20px; color: #00ff00; font-family: monospace;">
-                    <p>Loading terminal interface...</p>
+
+            <!-- Terminal I/O -->
+            <div class="panel" id="terminal-panel">
+                <div class="panel-header">
+                    <span>💻 Terminal I/O</span>
+                    <button class="btn" onclick="clearConsole()">Clear</button>
+                </div>
+                <div class="panel-content">
+                    <div id="console-output"></div>
+                    <div style="display: flex; align-items: center;">
+                        <span style="color: #00ff00; margin-right: 5px;">></span>
+                        <input type="text" id="console-input" placeholder="Terminal input (only active when CPU is running)..." style="flex: 1; background: transparent; border: none; color: #00ff00; font-family: 'Courier New', monospace; font-size: 12px; outline: none;" onkeydown="handleConsoleInput(event)">
+                    </div>
+                </div>
+            </div>
+
+            <!-- MCP Natural Language -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>🤖 AI Assistant</span>
+                </div>
+                <div class="panel-content">
+                    <textarea id="mcp-input" placeholder="Ask me to do something... (e.g., 'load hello world program', 'step the CPU 5 times', 'show memory at 0x0600')" rows="2" style="width: 100%;"></textarea>
+                    <div class="control-group" style="margin-top: 8px;">
+                        <button class="btn primary" onclick="sendMCPCommand()">Send</button>
+                        <button class="btn" onclick="clearMCPLog()">Clear Log</button>
+                    </div>
+                    <div id="mcp-log" style="height: 80px;"></div>
                 </div>
             </div>
         </div>
-        
-        <!-- MCP Display for logs -->
-        <div id="mcp-display" class="panel">
-            <div class="panel-header">
-                <span>MCP Logs</span>
-            </div>
-            <div class="panel-content">
-                <div style="height: 200px; overflow-y: auto; border: 1px solid #00ff00; padding: 5px; background: #000; color: #00ff00; font-family: monospace;">
-                    MCP (Model Context Protocol) interactions will appear here...
+
+        <!-- Right Panel: Memory & System -->
+        <div id="right-panel">
+            <!-- Memory Viewer -->
+            <div class="panel" style="flex: 2;">
+                <div class="panel-header">
+                    <span>💾 Memory Viewer</span>
+                    <div>
+                        <input type="text" id="memory-address" value="0000" style="width: 60px;">
+                        <button class="btn" onclick="gotoMemoryAddress()">Go</button>
+                        <button class="btn" onclick="updateMemoryDisplay()">Refresh</button>
+                    </div>
+                </div>
+                <div class="panel-content">
+                    <div class="memory-controls">
+                        <span style="font-size: 10px; color: #ffaa00;">Regions:</span>
+                        <div class="memory-region active" onclick="toggleMemoryRegion('zero-page', 0x0000)">Zero Page</div>
+                        <div class="memory-region active" onclick="toggleMemoryRegion('stack', 0x0100)">Stack</div>
+                        <div class="memory-region" onclick="toggleMemoryRegion('io', 0x0200)">I/O</div>
+                        <div class="memory-region active" onclick="toggleMemoryRegion('program', 0x0600)">Program</div>
+                        <div class="memory-region" onclick="toggleMemoryRegion('video', 0x4000)">Video</div>
+                        <div class="memory-region" onclick="toggleMemoryRegion('high', 0xF000)">High</div>
+                    </div>
+                    <div id="memory-display"></div>
                 </div>
             </div>
-        </div>
-        
-        <!-- Settings Panel -->
-        <div id="settings-panel" class="panel" style="display: none;">
-            <div class="panel-header">
-                <span>UI Settings</span>
-            </div>
-            <div class="panel-content">
-                <!-- Settings content will be populated by JS -->
-                <div style="padding: 20px; color: #00ff00; font-family: monospace;">
-                    <p>Loading settings interface...</p>
+
+            <!-- System Logs -->
+            <div class="panel" style="min-height: 200px; max-height: 250px; flex-shrink: 0;">
+                <div class="panel-header">
+                    <span>📋 System Logs</span>
+                    <button class="btn" onclick="clearSystemLog()">Clear</button>
+                </div>
+                <div class="panel-content">
+                    <div id="system-log" style="height: 200px; max-height: 200px; min-height: 150px; overflow-y: auto; overflow-x: hidden; background: #000; border: 1px solid #004400; padding: 8px; font-size: 11px; word-wrap: break-word; white-space: pre-wrap; line-height: 1.2;"></div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div id="panel-sidebar">
-        <!-- Sidebar for layout controls -->
-    </div>
-    
-    <!-- Fixed bottom toolbar for panel toggles -->
-    <div id="panel-toolbar" class="toolbar">
-        <div class="toolbar-content">
-            <label class="toolbar-toggle">
-                <input type="checkbox" id="toggle-memory" checked data-panel="memory-viewer">
-                <span class="toggle-label">Memory</span>
-            </label>
-            <label class="toolbar-toggle">
-                <input type="checkbox" id="toggle-debugger" checked data-panel="debugger">
-                <span class="toggle-label">Registers</span>
-            </label>
-            <label class="toolbar-toggle">
-                <input type="checkbox" id="toggle-video" checked data-panel="video-manager">
-                <span class="toggle-label">Video</span>
-            </label>
-            <label class="toolbar-toggle">
-                <input type="checkbox" id="toggle-assembly" data-panel="assembly-panel">
-                <span class="toggle-label">Assembly</span>
-            </label>
-            <label class="toolbar-toggle">
-                <input type="checkbox" id="toggle-mcp-input" data-panel="mcp-input-panel">
-                <span class="toggle-label">MCP Input</span>
-            </label>
-            <label class="toolbar-toggle">
-                <input type="checkbox" id="toggle-mcp-logs" data-panel="mcp-display">
-                <span class="toggle-label">MCP Logs</span>
-            </label>
-            <label class="toolbar-toggle">
-                <input type="checkbox" id="toggle-console" data-panel="console">
-                <span class="toggle-label">Console</span>
-            </label>
+
+    <!-- Footer -->
+    <div id="footer">
+        <div>iMaCoMpUtERussy v2.1.0 - Autonomous 8-bit CPU Emulator</div>
+        <div>
+            <span id="system-time"></span> | 
+            <span id="cpu-cycles">Cycles: 0</span> |
+            <span id="memory-usage">Memory: 0/64KB</span>
         </div>
     </div>
-    
-    <script type="module" src="js/app.js"></script>
+
+    <script type="module">
+        // Global state
+        let cpu, memory, assembler;
+        let isRunning = false;
+        let runInterval = null;
+        let cpuCycles = 0;
+        let videoContext, videoCanvas;
+        let currentMemoryAddress = 0;
+        let showGrid = false;
+        let activeMemoryRegions = new Set(['zero-page', 'stack', 'program']); // Default active regions
+        
+        // Initialize CPU running state for terminal input control
+        window.cpuRunning = false;
+        
+        // Initialize terminal I/O system
+        window.terminalInputBuffer = [];
+        window.inputAvailable = false;
+
+        // Module imports will be done dynamically with cache-busting in initializeSystem()
+
+        // Initialize system
+        async function initializeSystem() {
+            try {
+                updateSystemStatus('mcp-status', 'Connecting...', 'warn');
+                updateSystemStatus('cpu-status', 'Loading...', 'warn');
+                updateSystemStatus('memory-status', 'Loading...', 'warn');
+
+                // Test MCP connection
+                try {
+                    const response = await fetch('http://localhost:8001/health');
+                    if (response.ok) {
+                        updateSystemStatus('mcp-status', 'Connected', 'good');
+                        log('✓ MCP server connected');
+                    } else {
+                        throw new Error('Server not responding');
+                    }
+                } catch (error) {
+                    updateSystemStatus('mcp-status', 'Offline', 'error');
+                    log('⚠ MCP server offline - using local simulation');
+                }
+
+                // Load modules with enhanced debugging
+                log('📁 Loading CPU and Memory modules...');
+                const timestamp = Date.now();
+                const [cpuModule, memoryModule] = await Promise.all([
+                    import('./js/cpu.js?' + timestamp),
+                    import('./js/memory.js?' + timestamp)
+                ]);
+
+                // Load assembler separately with detailed logging
+                log('📁 Loading assembler module...');
+                const assemblerModule = await import('./js/assembler.js?' + timestamp);
+                
+                log(`📋 Assembler module loaded successfully`);
+                log(`📋 Available exports: ${Object.keys(assemblerModule).join(', ')}`);
+                log(`📋 Has assemble function: ${typeof assemblerModule.assemble === 'function'}`);
+                log(`📋 Has default export: ${!!assemblerModule.default}`);
+                
+                if (assemblerModule.default) {
+                    log(`📋 Default export keys: ${Object.keys(assemblerModule.default).join(', ')}`);
+                }
+
+                // Initialize components
+                memory = new memoryModule.iMaCoMpUtERussyMemory();
+                cpu = new cpuModule.iMaCoMpUtERussyCPU({ memory });
+
+                // Initialize video display system
+                videoCanvas = document.getElementById('video-canvas');
+                videoContext = videoCanvas.getContext('2d');
+                
+                // Import and initialize VideoDisplay class
+                try {
+                    const { VideoDisplay } = await import('./js/ui/video-display.js?' + timestamp);
+                    window.videoDisplay = new VideoDisplay(videoCanvas, memory, 32, 24);
+                    log('✓ Video display system initialized');
+                } catch (error) {
+                    log(`⚠ Video display fallback: ${error.message}`);
+                    // Fallback: basic video context
+                    videoContext.fillStyle = '#000';
+                    videoContext.fillRect(0, 0, 256, 192);
+                    
+                    // Create minimal updateDisplay function for CPU compatibility
+                    window.videoDisplay = {
+                        updateDisplay: () => {
+                            log('Video update called (fallback mode)');
+                            // Simple fallback: just clear to green if there's data in video buffer
+                            const hasData = memory.readByte(0x0200) !== 0;
+                            videoContext.fillStyle = hasData ? '#004400' : '#000000';
+                            videoContext.fillRect(0, 0, 256, 192);
+                        }
+                    };
+                }
+                
+                // Use the assemble function from the module
+                if (assemblerModule && typeof assemblerModule.assemble === 'function') {
+                    assembler = assemblerModule;
+                    log('✅ Real assembler loaded successfully');
+                    
+                    // Test the assembler with a simple program
+                    try {
+                        const testResult = assembler.assemble('LDA #10\nHLT', {});
+                        log(`✅ Assembler test successful: ${testResult.bytes.length} bytes generated`);
+                        log(`✅ Test bytes: [${testResult.bytes.join(', ')}]`);
+                    } catch (testError) {
+                        log(`❌ Assembler test failed: ${testError.message}`);
+                    }
+                    
+                } else if (assemblerModule && assemblerModule.default && typeof assemblerModule.default.assemble === 'function') {
+                    assembler = assemblerModule.default;
+                    log('✅ Default assembler loaded successfully');
+                } else {
+                    // Fallback simple assembler
+                    const fallbackAssembler = {
+                        assemble: function(code) {
+                            log('⚠ Using fallback assembler - real assembler failed to load');
+                            
+                            // Simple regex-based assembler for basic instructions
+                            const lines = code.split('\n');
+                            const bytes = [];
+                            let startAddress = 0x0600;
+                            
+                            for (const line of lines) {
+                                const cleanLine = line.trim().replace(/;.*$/, ''); // Remove comments
+                                if (!cleanLine) continue;
+                                
+                                if (cleanLine.startsWith('.org')) {
+                                    const match = cleanLine.match(/\.org\s+(?:0x|$)?([0-9a-fA-F]+)/i);
+                                    if (match) {
+                                        startAddress = parseInt(match[1], 16);
+                                    }
+                                    continue;
+                                }
+                                
+                                // Basic instruction parsing
+                                if (cleanLine.match(/^LDA\s+#(\d+)/i)) {
+                                    const match = cleanLine.match(/^LDA\s+#(\d+)/i);
+                                    bytes.push(0xA9, parseInt(match[1]));
+                                    log(`  LDA #${match[1]} -> [A9, ${parseInt(match[1]).toString(16).padStart(2, '0').toUpperCase()}]`);
+                                } else if (cleanLine.match(/^STA\s+\$([0-9a-fA-F]+)/i)) {
+                                    const match = cleanLine.match(/^STA\s+\$([0-9a-fA-F]+)/i);
+                                    const addr = parseInt(match[1], 16);
+                                    if (addr < 256) {
+                                        bytes.push(0x85, addr); // Zero page
+                                        log(`  STA $${match[1]} -> [85, ${addr.toString(16).padStart(2, '0').toUpperCase()}] (zero page)`);
+                                    } else {
+                                        bytes.push(0x8D, addr & 0xFF, (addr >> 8) & 0xFF); // Absolute
+                                        log(`  STA $${match[1]} -> [8D, ${(addr & 0xFF).toString(16).padStart(2, '0').toUpperCase()}, ${((addr >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase()}] (absolute)`);
+                                    }
+                                } else if (cleanLine.match(/^HLT/i)) {
+                                    bytes.push(0x3A); // Halt instruction
+                                    log(`  HLT -> [3A]`);
+                                } else if (cleanLine.match(/^NOP/i)) {
+                                    bytes.push(0xEA); // NOP instruction
+                                    log(`  NOP -> [EA]`);
+                                } else if (cleanLine.trim()) {
+                                    log(`  ⚠ Unknown instruction: ${cleanLine}`);
+                                }
+                            }
+                            
+                            return {
+                                bytes: bytes,
+                                startAddress: startAddress,
+                                errors: []
+                            };
+                        }
+                    };
+                    assembler = fallbackAssembler;
+                    window.fallbackAssembler = fallbackAssembler;
+                    log('⚠ Using enhanced fallback assembler');
+                }
+
+                updateSystemStatus('cpu-status', 'Ready', 'good');
+                updateSystemStatus('memory-status', 'Ready', 'good');
+
+                // Set up I/O mapping 
+                setupIOHandling();
+
+                // Initial display updates
+                updateCPUDisplay();
+                updateMemoryDisplay();
+
+                log('🎉 System initialized successfully!');
+                
+                // Auto-load a sample program
+                document.getElementById('sample-programs').value = 'hello-world.asm';
+                await loadSample();
+
+            } catch (error) {
+                log(`❌ Initialization failed: ${error.message}`);
+                updateSystemStatus('cpu-status', 'Error', 'error');
+                updateSystemStatus('memory-status', 'Error', 'error');
+                console.error('Initialization error:', error);
+            }
+        }
+
+        function updateSystemStatus(elementId, text, type) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+                element.className = `status-${type}`;
+            }
+        }
+
+        function log(message, target = 'system-log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById(target);
+            if (logElement) {
+                // Prevent excessive logging of the same message
+                const lastMessage = logElement.lastElementChild?.textContent;
+                if (lastMessage && lastMessage.includes(message)) {
+                    return; // Skip duplicate messages
+                }
+                
+                // Limit log length to prevent memory issues
+                const maxLogEntries = 100;
+                const logEntries = logElement.children;
+                if (logEntries.length >= maxLogEntries) {
+                    // Remove oldest entries
+                    for (let i = 0; i < 10; i++) {
+                        if (logEntries[0]) logEntries[0].remove();
+                    }
+                }
+                
+                const logEntry = document.createElement('div');
+                logEntry.style.color = '#00ff00';
+                logEntry.style.marginBottom = '2px';
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                logElement.appendChild(logEntry);
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+            console.log(message);
+        }
+
+        function setupIOHandling() {
+            // Set up proper I/O handling for terminal interaction
+            log('Setting up I/O handling for terminal interaction');
+            
+            // Initialize I/O buffers and status
+            window.terminalOutputBuffer = [];
+            window.terminalInputBuffer = [];
+            window.inputAvailable = false;
+            
+            // Set up memory-mapped I/O registers
+            // $F0 = Input register (read character)
+            // $F1 = Output register (write character) 
+            // $F2 = Status register (bit 0 = input ready)
+            
+            // Hook into memory reads to handle input register
+            if (memory && memory.readByte) {
+                const originalReadByte = memory.readByte.bind(memory);
+                memory.readByte = function(address) {
+                    if (address === 0x00F0) {
+                        // Input register - return next character from buffer
+                        if (window.terminalInputBuffer.length > 0) {
+                            const char = window.terminalInputBuffer.shift();
+                            // Always update the status register after reading a character
+                            const newStatus = window.terminalInputBuffer.length > 0 ? 0x01 : 0x00;
+                            window.inputAvailable = window.terminalInputBuffer.length > 0;
+                            
+                            // Directly update the memory location without triggering the write hook
+                            originalReadByte.call(this, 0x00F2); // Read current value first
+                            if (memory.memory && memory.memory[0x00F2] !== undefined) {
+                                memory.memory[0x00F2] = newStatus;
+                            }
+                            
+                            // Log all character reads for debugging
+                            if (char === 13) {
+                                log(`📥 CPU read: Enter key (${char}) - buffer now has ${window.terminalInputBuffer.length} chars, status=${newStatus}`);
+                            } else if (char >= 32 && char <= 126) {
+                                log(`📥 CPU read: '${String.fromCharCode(char)}' (${char}) - buffer now has ${window.terminalInputBuffer.length} chars, status=${newStatus}`);
+                            } else {
+                                log(`📥 CPU read: special char ${char} - buffer now has ${window.terminalInputBuffer.length} chars, status=${newStatus}`);
+                            }
+                            return char;
+                        }
+                        log(`📥 CPU read from empty input buffer`);
+                        return 0; // No input available
+                    } else if (address === 0x00F2) {
+                        // Status register - return input availability  
+                        const status = window.terminalInputBuffer.length > 0 ? 0x01 : 0x00;
+                        log(`📥 CPU read status register: ${status} (buffer length: ${window.terminalInputBuffer.length})`);
+                        return status;
+                    }
+                    return originalReadByte(address);
+                };
+            } else {
+                log('❌ Warning: memory.readByte not available for input hook');
+            }
+
+            // Hook into memory writes to catch terminal output
+            if (memory && memory.writeByte) {
+                const originalWriteByte = memory.writeByte.bind(memory);
+                memory.writeByte = function(address, value) {
+                    // Call original write first
+                    originalWriteByte(address, value);
+                    
+                    // Check for terminal output at multiple I/O addresses
+                    if (address === 0x00F1 || address === 0x0200 || address === 0xF001) {
+                        log(`📺 Debug: Terminal write to 0x${address.toString(16).toUpperCase()}: ${value} (${value >= 32 && value <= 126 ? String.fromCharCode(value) : 'special'})`);
+                        handleTerminalOutput(value);
+                    }
+                };
+            } else {
+                log('❌ Warning: memory.writeByte not available for terminal output hook');
+            }
+        }
+
+        function handleTerminalOutput(value) {
+            const output = document.getElementById('console-output');
+            log(`📺 handleTerminalOutput called: value=${value}, output element exists=${!!output}`);
+            
+            if (output && value > 0) {
+                if (value === 10 || value === 13) { // Newline
+                    output.innerHTML += '<br>';
+                    log(`📺 Added newline to terminal`);
+                } else if (value >= 32 && value <= 126) { // Printable ASCII
+                    const char = String.fromCharCode(value);
+                    output.innerHTML += char;
+                    log(`📺 Added character '${char}' to terminal`);
+                } else {
+                    output.innerHTML += `<span style="color: #888;">[${value.toString(16).padStart(2, '0')}]</span>`;
+                    log(`📺 Added special character [${value.toString(16).padStart(2, '0')}] to terminal`);
+                }
+                output.scrollTop = output.scrollHeight;
+            } else {
+                log(`📺 handleTerminalOutput failed: output=${!!output}, value=${value}`);
+            }
+        }
+
+        window.handleConsoleInput = function(event) {
+            const input = event.target;
+            const output = document.getElementById('console-output');
+            
+            // Only process if CPU is running
+            if (!window.cpuRunning) {
+                if (event.key === 'Enter') {
+                    output.innerHTML += `<span style="color: #666;">// CPU not running. Load and run a program first.</span><br>`;
+                    input.value = '';
+                    output.scrollTop = output.scrollHeight;
+                }
+                return;
+            }
+            
+            // Handle Enter key
+            if (event.key === 'Enter') {
+                // Don't echo the prompt line - let the program handle all output
+                // Just add the input text without the ">" prompt since the echo program will handle echoing
+                
+                // Add each character to the input buffer
+                for (let i = 0; i < input.value.length; i++) {
+                    const charCode = input.value.charCodeAt(i);
+                    window.terminalInputBuffer.push(charCode);
+                }
+                
+                // Add carriage return
+                window.terminalInputBuffer.push(13); // CR
+                
+                // Set input available flag and update status register
+                if (window.terminalInputBuffer.length > 0) {
+                    window.inputAvailable = true;
+                    if (memory && memory.writeByte) {
+                        memory.writeByte(0x00F2, 0x01); // Set input ready flag
+                    }
+                    log(`📥 Terminal input queued: "${input.value}" (${window.terminalInputBuffer.length} chars total)`);
+                }
+                
+                input.value = '';
+                output.scrollTop = output.scrollHeight;
+                
+                // Prevent default form submission
+                event.preventDefault();
+                return false;
+            }
+        };
+
+        function updateVideoPixel(offset, value) {
+            const x = offset % 256;
+            const y = Math.floor(offset / 256);
+            if (x < 256 && y < 192) {
+                const color = value > 0 ? '#00ff00' : '#000000';
+                videoContext.fillStyle = color;
+                videoContext.fillRect(x, y, 1, 1);
+            }
+        }
+
+        function updateCPUDisplay() {
+            if (cpu) {
+                try {
+                    // Try different ways to access CPU registers
+                    let pc, a, x, y, sp, status;
+                    
+                    if (cpu.registers) {
+                        // Method 1: cpu.registers object
+                        const regs = cpu.registers;
+                        pc = regs.PC || regs.pc || 0;
+                        a = regs.A || regs.a || 0;
+                        x = regs.X || regs.x || 0;
+                        y = regs.Y || regs.y || 0;
+                        sp = regs.SP || regs.sp || 255;
+                        status = regs.status || regs.P || regs.p || 0;
+                    } else {
+                        // Method 2: Direct properties
+                        pc = cpu.PC || cpu.pc || 0;
+                        a = cpu.A || cpu.a || 0;
+                        x = cpu.X || cpu.x || 0;
+                        y = cpu.Y || cpu.y || 0;
+                        sp = cpu.SP || cpu.sp || 255;
+                        status = cpu.status || cpu.P || cpu.p || 0;
+                    }
+                    
+                    // Update display
+                    document.getElementById('reg-pc').textContent = pc.toString(16).padStart(4, '0').toUpperCase();
+                    document.getElementById('reg-a').textContent = a.toString(16).padStart(2, '0').toUpperCase();
+                    document.getElementById('reg-x').textContent = x.toString(16).padStart(2, '0').toUpperCase();
+                    document.getElementById('reg-y').textContent = y.toString(16).padStart(2, '0').toUpperCase();
+                    document.getElementById('reg-sp').textContent = sp.toString(16).padStart(2, '0').toUpperCase();
+                    document.getElementById('reg-status').textContent = status.toString(16).padStart(2, '0').toUpperCase();
+                    
+                    document.getElementById('cpu-cycles').textContent = `Cycles: ${cpuCycles}`;
+                } catch (error) {
+                    // Only log occasionally to avoid spam
+                    if (cpuCycles % 100 === 0) {
+                        console.warn('CPU register access error:', error.message);
+                    }
+                }
+            }
+        }
+
+        function updateMemoryDisplay() {
+            if (!memory || !memory.readByte) return;
+            
+            const display = document.getElementById('memory-display');
+            if (!display) return;
+            
+            // Memory region definitions
+            const regions = [
+                { name: 'zero-page', start: 0x0000, size: 256, title: 'Zero Page (0x0000-0x00FF)' },
+                { name: 'stack', start: 0x0100, size: 256, title: 'Stack (0x0100-0x01FF)' },
+                { name: 'io', start: 0x0200, size: 256, title: 'I/O Ports (0x0200-0x02FF)' },
+                { name: 'program', start: 0x0600, size: 512, title: 'Program Area (0x0600-0x07FF)' },
+                { name: 'video', start: 0x4000, size: 256, title: 'Video Memory (0x4000-0x40FF)' },
+                { name: 'high', start: 0xF000, size: 256, title: 'High Memory (0xF000-0xF0FF)' }
+            ];
+            
+            let html = '';
+            let pcAddr = 0;
+            
+            // Get PC address safely
+            try {
+                if (cpu && cpu.registers) {
+                    pcAddr = cpu.registers.PC || cpu.registers.pc || 0;
+                } else if (cpu) {
+                    pcAddr = cpu.PC || cpu.pc || 0;
+                }
+            } catch (error) {
+                // Silently handle PC access errors
+                pcAddr = 0;
+            }
+            
+            // Render ALL active regions completely
+            for (const region of regions) {
+                if (!activeMemoryRegions.has(region.name)) continue;
+                
+                html += `<div class="memory-section">`;
+                html += `<div class="memory-section-title">${region.title}</div>`;
+                
+                // Show ALL rows for active regions - make it wider to prevent scrolling
+                for (let row = 0; row < Math.ceil(region.size / 16); row++) {
+                    const addr = region.start + (row * 16);
+                    if (addr >= region.start + region.size) break;
+                    
+                    html += `<div style="display: flex; gap: 1px; margin-bottom: 1px; font-size: 9px; line-height: 1.1; white-space: nowrap;">`;
+                    html += `<span style="color: #ffaa00; width: 38px; flex-shrink: 0;">${addr.toString(16).padStart(4, '0').toUpperCase()}:</span>`;
+                    
+                    // Hex bytes - make them a bit wider
+                    let hexHtml = '';
+                    for (let col = 0; col < 16; col++) {
+                        if (addr + col < region.start + region.size) {
+                            const byteAddr = addr + col;
+                            const value = memory.readByte(byteAddr);
+                            const isPC = pcAddr === byteAddr;
+                            const bg = isPC ? '#004400' : 'transparent';
+                            const color = value === 0 ? '#444444' : '#00ff00';
+                            hexHtml += `<span style="width: 18px; text-align: center; background: ${bg}; color: ${color}; display: inline-block; margin-right: 1px;">${value.toString(16).padStart(2, '0').toUpperCase()}</span>`;
+                        } else {
+                            hexHtml += `<span style="width: 18px; display: inline-block; margin-right: 1px;"></span>`;
+                        }
+                    }
+                    html += hexHtml;
+                    
+                    // ASCII representation
+                    html += `<span style="color: #666666; margin-left: 8px; font-size: 8px; width: 80px; flex-shrink: 0;">`;
+                    for (let col = 0; col < 16; col++) {
+                        if (addr + col < region.start + region.size) {
+                            const value = memory.readByte(addr + col);
+                            const char = (value >= 32 && value <= 126) ? String.fromCharCode(value) : '.';
+                            html += char;
+                        }
+                    }
+                    html += `</span></div>`;
+                }
+                
+                html += `</div>`;
+            }
+            
+            if (html === '') {
+                html = '<div style="color: #666666; text-align: center; padding: 20px;">No memory regions selected</div>';
+            }
+            
+            display.innerHTML = html;
+        }
+
+        // CPU Control Functions
+        window.stepCPU = function() {
+            if (cpu && cpu.step) {
+                try {
+                    cpu.step();
+                    cpuCycles++;
+                    updateCPUDisplay();
+                    updateMemoryDisplay();
+                    log('CPU stepped');
+                } catch (error) {
+                    log(`CPU step error: ${error.message}`);
+                }
+            } else {
+                log('❌ CPU not ready or step method missing');
+            }
+        };
+
+        window.runCPU = function() {
+            if (isRunning) return;
+            
+            isRunning = true;
+            window.cpuRunning = true; // Set global flag for terminal input
+            const speed = parseInt(document.getElementById('cpu-speed').value);
+            const delay = 1000 / speed;
+            
+            runInterval = setInterval(() => {
+                try {
+                    if (cpu && cpu.step) {
+                        cpu.step();
+                        cpuCycles++;
+                        
+                        // Update displays more frequently so you can see what's happening
+                        if (cpuCycles % 5 === 0) {
+                            updateCPUDisplay();
+                            updateMemoryDisplay();
+                        }
+                    }
+                } catch (error) {
+                    log(`CPU run error: ${error.message}`);
+                    stopCPU();
+                }
+            }, delay);
+            
+            log(`CPU running at ${speed} Hz`);
+        };
+
+        window.stopCPU = function() {
+            if (runInterval) {
+                clearInterval(runInterval);
+                runInterval = null;
+            }
+            isRunning = false;
+            window.cpuRunning = false; // Clear global flag for terminal input
+            updateCPUDisplay();
+            updateMemoryDisplay();
+            log('CPU stopped');
+        };
+
+        window.resetCPU = function() {
+            stopCPU();
+            try {
+                // Reset CPU registers
+                if (cpu) {
+                    if (cpu.reset) {
+                        cpu.reset();
+                    } else {
+                        // Manual reset if no reset method
+                        if (cpu.registers) {
+                            cpu.registers.PC = 0x0600; // Default program start
+                            cpu.registers.A = 0;
+                            cpu.registers.X = 0;
+                            cpu.registers.Y = 0;
+                            cpu.registers.SP = 0xFF;
+                            cpu.registers.status = 0;
+                        } else {
+                            cpu.PC = 0x0600;
+                            cpu.A = 0;
+                            cpu.X = 0;
+                            cpu.Y = 0;
+                            cpu.SP = 0xFF;
+                            cpu.status = 0;
+                        }
+                    }
+                }
+                cpuCycles = 0;
+                updateCPUDisplay();
+                updateMemoryDisplay();
+                log('CPU reset to initial state');
+            } catch (error) {
+                log(`CPU reset error: ${error.message}`);
+            }
+        };
+
+        // Program Management
+        window.loadSample = async function() {
+            const select = document.getElementById('sample-programs');
+            const filename = select.value;
+            if (!filename) return;
+
+            try {
+                const response = await fetch(`/samples/${filename}`);
+                if (!response.ok) throw new Error(`Failed to load ${filename}`);
+                
+                const content = await response.text();
+                document.getElementById('assembly-editor').value = content;
+                document.getElementById('load-status').innerHTML = `<div class="load-success">✓ Loaded ${filename}</div>`;
+                log(`Loaded sample: ${filename}`);
+                
+                // Automatically assemble and load after loading the sample
+                setTimeout(() => {
+                    assembleAndLoad();
+                }, 100);
+                
+            } catch (error) {
+                document.getElementById('load-status').innerHTML = `<div class="load-error">❌ Failed to load ${filename}: ${error.message}</div>`;
+                log(`Failed to load ${filename}: ${error.message}`);
+            }
+        };
+
+        window.assembleAndLoad = function() {
+            const code = document.getElementById('assembly-editor').value.trim();
+            if (!code) {
+                document.getElementById('load-status').innerHTML = `<div class="load-error">❌ No assembly code to assemble</div>`;
+                return;
+            }
+
+            log(`Assembling code: ${code.substring(0, 50)}...`);
+
+            try {
+                if (!assembler || !assembler.assemble) {
+                    throw new Error('Assembler not available');
+                }
+
+                log(`🔧 Using assembler: ${assembler === window.fallbackAssembler ? 'fallback' : 'real'}`);
+                log(`🔧 Assembler has assemble: ${typeof assembler.assemble === 'function'}`);
+
+                const result = assembler.assemble(code);
+                
+                // Handle different return formats: real assembler returns Uint8Array, fallback returns object
+                let assembledBytes, programStartAddress, assemblyErrors;
+                
+                if (result instanceof Uint8Array) {
+                    // Real assembler returns Uint8Array directly
+                    assembledBytes = Array.from(result);
+                    programStartAddress = 0x0600; // Default start address
+                    assemblyErrors = [];
+                    log(`Assembly result: ${assembledBytes.length} bytes (Uint8Array from real assembler)`);
+                } else if (result && typeof result === 'object') {
+                    // Fallback assembler returns object with bytes, startAddress, errors
+                    assembledBytes = result.bytes || [];
+                    programStartAddress = result.startAddress || 0x0600;
+                    assemblyErrors = result.errors || [];
+                    log(`Assembly result: ${assembledBytes.length} bytes (object from fallback assembler)`);
+                } else {
+                    assembledBytes = [];
+                    programStartAddress = 0x0600;
+                    assemblyErrors = ['Unknown result format'];
+                    log(`Assembly result: Unknown format: ${typeof result}`);
+                }
+                
+                log(`🔧 Start address: 0x${programStartAddress.toString(16).padStart(4, '0')}`);
+                
+                if (assemblyErrors.length > 0) {
+                    const errorMsg = assemblyErrors.join(', ');
+                    document.getElementById('load-status').innerHTML = `<div class="load-error">❌ Assembly errors: ${errorMsg}</div>`;
+                    log(`Assembly errors: ${errorMsg}`);
+                    return;
+                }
+
+                if (!assembledBytes || assembledBytes.length === 0) {
+                    throw new Error('Assembly produced no bytes');
+                }
+
+                // Load assembled code into memory
+                log(`Loading ${assembledBytes.length} bytes to address 0x${programStartAddress.toString(16).toUpperCase()}`);
+                
+                for (let i = 0; i < assembledBytes.length; i++) {
+                    if (memory && memory.writeByte) {
+                        memory.writeByte(programStartAddress + i, assembledBytes[i]);
+                        log(`Memory[0x${(programStartAddress + i).toString(16).toUpperCase()}] = 0x${assembledBytes[i].toString(16).padStart(2, '0').toUpperCase()}`);
+                    }
+                }
+
+                // Set PC to start address
+                if (cpu) {
+                    try {
+                        if (cpu.registers) {
+                            cpu.registers.PC = programStartAddress;
+                        } else {
+                            cpu.PC = programStartAddress;
+                        }
+                        log(`Set Program Counter to 0x${programStartAddress.toString(16).toUpperCase()}`);
+                    } catch (error) {
+                        log(`Warning: Could not set PC - ${error.message}`);
+                    }
+                }
+                
+                updateCPUDisplay();
+                updateMemoryDisplay();
+                
+                document.getElementById('load-status').innerHTML = `<div class="load-success">✓ Assembled and loaded ${assembledBytes.length} bytes at 0x${programStartAddress.toString(16).toUpperCase()}</div>`;
+                log(`Successfully assembled and loaded program at 0x${programStartAddress.toString(16).toUpperCase()}`);
+                log(`📋 First 16 bytes: [${assembledBytes.slice(0, 16).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')}${assembledBytes.length > 16 ? '...' : ''}]`);
+                
+            } catch (error) {
+                document.getElementById('load-status').innerHTML = `<div class="load-error">❌ Assembly failed: ${error.message}</div>`;
+                log(`Assembly failed: ${error.message}`);
+                console.error('Assembly error details:', error);
+            }
+        };
+
+        window.saveProgram = function() {
+            const code = document.getElementById('assembly-editor').value;
+            const blob = new Blob([code], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'program.asm';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            log('Program saved');
+        };
+
+        window.clearEditor = function() {
+            document.getElementById('assembly-editor').value = '';
+            document.getElementById('load-status').innerHTML = '';
+            log('Editor cleared');
+        };
+
+        // Memory Navigation - Optimized
+        window.toggleMemoryRegion = function(regionName, startAddr) {
+            if (activeMemoryRegions.has(regionName)) {
+                activeMemoryRegions.delete(regionName);
+            } else {
+                activeMemoryRegions.add(regionName);
+            }
+            
+            // Update UI efficiently
+            const regionElements = document.querySelectorAll('.memory-region');
+            for (const element of regionElements) {
+                const onclick = element.getAttribute('onclick');
+                if (onclick && onclick.includes(regionName)) {
+                    if (activeMemoryRegions.has(regionName)) {
+                        element.classList.add('active');
+                    } else {
+                        element.classList.remove('active');
+                    }
+                    break;
+                }
+            }
+            
+            // Update memory display
+            updateMemoryDisplay();
+            log(`Memory region '${regionName}' ${activeMemoryRegions.has(regionName) ? 'enabled' : 'disabled'}`);
+        };
+
+        window.gotoMemoryAddress = function() {
+            const addrInput = document.getElementById('memory-address').value;
+            try {
+                const addr = parseInt(addrInput, 16);
+                if (addr >= 0 && addr <= 0xFFFF) {
+                    currentMemoryAddress = addr & 0xFFF0; // Align to 16-byte boundary
+                    
+                    // Temporarily show this address even if region is not active
+                    const tempRegion = {
+                        name: 'custom',
+                        start: currentMemoryAddress,
+                        size: 256,
+                        title: `Custom View (0x${currentMemoryAddress.toString(16).toUpperCase()})`
+                    };
+                    
+                    // Add custom region temporarily
+                    activeMemoryRegions.add('custom');
+                    updateMemoryDisplay();
+                    
+                    log(`Memory view: 0x${currentMemoryAddress.toString(16).toUpperCase()}`);
+                }
+            } catch (error) {
+                log(`Invalid memory address: ${addrInput}`);
+            }
+        };
+
+        // Video Functions
+        window.clearVideo = function() {
+            if (videoContext) {
+                videoContext.fillStyle = '#000';
+                videoContext.fillRect(0, 0, 256, 192);
+                log('Video cleared');
+            }
+        };
+
+        window.toggleVideoGrid = function() {
+            showGrid = !showGrid;
+            if (showGrid) {
+                // Draw grid lines
+                videoContext.strokeStyle = '#004400';
+                videoContext.lineWidth = 1;
+                for (let x = 0; x < 256; x += 16) {
+                    videoContext.beginPath();
+                    videoContext.moveTo(x, 0);
+                    videoContext.lineTo(x, 192);
+                    videoContext.stroke();
+                }
+                for (let y = 0; y < 192; y += 16) {
+                    videoContext.beginPath();
+                    videoContext.moveTo(0, y);
+                    videoContext.lineTo(256, y);
+                    videoContext.stroke();
+                }
+                log('Video grid enabled');
+            } else {
+                // Redraw without grid (this is simplified)
+                videoContext.fillStyle = '#000';
+                videoContext.fillRect(0, 0, 256, 192);
+                log('Video grid disabled');
+            }
+        };
+
+        window.saveVideoFrame = function() {
+            if (videoCanvas) {
+                const link = document.createElement('a');
+                link.download = 'video-frame.png';
+                link.href = videoCanvas.toDataURL();
+                link.click();
+                log('Video frame saved');
+            }
+        };
+
+        // MCP Commands
+        window.sendMCPCommand = async function() {
+            const input = document.getElementById('mcp-input');
+            const command = input.value.trim();
+            if (!command) return;
+
+            log(`AI Command: ${command}`, 'mcp-log');
+            
+            // Process common commands locally for responsiveness
+            const lowerCommand = command.toLowerCase();
+            
+            if (lowerCommand.includes('step')) {
+                const match = lowerCommand.match(/step.*?(\d+)/);
+                const steps = match ? parseInt(match[1]) : 1;
+                for (let i = 0; i < steps; i++) {
+                    stepCPU();
+                }
+                log(`✓ Stepped CPU ${steps} time(s)`, 'mcp-log');
+            } else if (lowerCommand.includes('reset')) {
+                resetCPU();
+                log('✓ Reset CPU', 'mcp-log');
+            } else if (lowerCommand.includes('run')) {
+                runCPU();
+                log('✓ Started CPU', 'mcp-log');
+            } else if (lowerCommand.includes('stop')) {
+                stopCPU();
+                log('✓ Stopped CPU', 'mcp-log');
+            } else if (lowerCommand.includes('load') && lowerCommand.includes('hello')) {
+                document.getElementById('sample-programs').value = 'hello-world.asm';
+                await loadSample();
+                assembleAndLoad();
+                log('✓ Loaded and assembled Hello World', 'mcp-log');
+            } else if (lowerCommand.includes('memory') || lowerCommand.includes('0x')) {
+                const match = command.match(/0x([0-9a-fA-F]+)/);
+                if (match) {
+                    document.getElementById('memory-address').value = match[1];
+                    gotoMemoryAddress();
+                    log(`✓ Showing memory at 0x${match[1]}`, 'mcp-log');
+                }
+            } else {
+                // Try MCP server for complex commands
+                try {
+                    const response = await fetch('http://localhost:8001/mcp/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ command })
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        log(`✓ MCP: ${JSON.stringify(result)}`, 'mcp-log');
+                    } else {
+                        log(`✗ MCP server error: ${response.status}`, 'mcp-log');
+                    }
+                } catch (error) {
+                    log(`✗ Could not process: ${error.message}`, 'mcp-log');
+                }
+            }
+            
+            input.value = '';
+        };
+
+        // Utility Functions
+        window.clearConsole = function() {
+            document.getElementById('console-output').innerHTML = '';
+            // Also clear input buffer for fresh start
+            window.terminalInputBuffer = [];
+            window.inputAvailable = false;
+            if (memory && memory.writeByte) {
+                memory.writeByte(0x00F2, 0x00); // Clear status register
+            }
+            log('Terminal cleared and input buffer reset');
+        };
+        
+        window.clearMCPLog = function() {
+            document.getElementById('mcp-log').innerHTML = '';
+        };
+        
+        window.clearSystemLog = function() {
+            document.getElementById('system-log').innerHTML = '';
+        };
+
+        // Update system time
+        setInterval(() => {
+            document.getElementById('system-time').textContent = new Date().toLocaleTimeString();
+        }, 1000);
+
+        // Initialize on load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeSystem);
+        } else {
+            initializeSystem();
+        }
+    </script>
 </body>
 </html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>iMaCoMpUtERussy Diagnostics</title>
+    <style>
+        body { font-family: monospace; background: #000; color: #00ff00; padding: 20px; }
+        .error { color: #ff4444; }
+        .success { color: #44ff44; }
+        .warning { color: #ffaa00; }
+        .section { margin: 20px 0; border: 1px solid #333; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>iMaCoMpUtERussy System Diagnostics</h1>
+    
+    <div class="section">
+        <h2>Server Status</h2>
+        <div id="server-status">Checking...</div>
+    </div>
+    
+    <div class="section">
+        <h2>File Structure</h2>
+        <div id="file-status">Checking...</div>
+    </div>
+    
+    <div class="section">
+        <h2>JavaScript Modules</h2>
+        <div id="js-status">Checking...</div>
+    </div>
+    
+    <div class="section">
+        <h2>CSS Resources</h2>
+        <div id="css-status">Checking...</div>
+    </div>
+    
+    <script>
+        async function checkServerStatus() {
+            const div = document.getElementById('server-status');
+            try {
+                const response = await fetch('http://localhost:8001/health');
+                const data = await response.json();
+                div.innerHTML = `<span class="success">✓ MCP Server: ${data.status} (${data.timestamp})</span>`;
+                
+                // Test UI server
+                const uiResponse = await fetch('http://localhost:8000/');
+                if (uiResponse.ok) {
+                    div.innerHTML += `<br><span class="success">✓ UI Server: OK</span>`;
+                } else {
+                    div.innerHTML += `<br><span class="error">✗ UI Server: ${uiResponse.status}</span>`;
+                }
+            } catch (error) {
+                div.innerHTML = `<span class="error">✗ Server Error: ${error.message}</span>`;
+            }
+        }
+        
+        async function checkFiles() {
+            const div = document.getElementById('file-status');
+            const files = [
+                '/js/app.js',
+                '/js/ui/debugger.js',
+                '/js/ui/memory-viewer.js',
+                '/js/cpu.js',
+                '/css/retro-theme.css'
+            ];
+            
+            let results = '';
+            for (const file of files) {
+                try {
+                    const response = await fetch(file);
+                    if (response.ok) {
+                        results += `<span class="success">✓ ${file}</span><br>`;
+                    } else {
+                        results += `<span class="error">✗ ${file} (${response.status})</span><br>`;
+                    }
+                } catch (error) {
+                    results += `<span class="error">✗ ${file} (${error.message})</span><br>`;
+                }
+            }
+            div.innerHTML = results;
+        }
+        
+        async function checkJS() {
+            const div = document.getElementById('js-status');
+            let results = '';
+            
+            // Check if modules can be imported
+            try {
+                const app = await import('./js/app.js');
+                results += `<span class="success">✓ app.js imported</span><br>`;
+            } catch (error) {
+                results += `<span class="error">✗ app.js import failed: ${error.message}</span><br>`;
+            }
+            
+            try {
+                const debuggerModule = await import('./js/ui/debugger.js');
+                results += `<span class="success">✓ debugger.js imported</span><br>`;
+            } catch (error) {
+                results += `<span class="error">✗ debugger.js import failed: ${error.message}</span><br>`;
+            }
+            
+            div.innerHTML = results;
+        }
+        
+        async function checkCSS() {
+            const div = document.getElementById('css-status');
+            let results = '';
+            
+            try {
+                const response = await fetch('/css/retro-theme.css');
+                if (response.ok) {
+                    const css = await response.text();
+                    results += `<span class="success">✓ retro-theme.css (${css.length} bytes)</span><br>`;
+                } else {
+                    results += `<span class="error">✗ retro-theme.css (${response.status})</span><br>`;
+                }
+            } catch (error) {
+                results += `<span class="error">✗ retro-theme.css: ${error.message}</span><br>`;
+            }
+            
+            try {
+                const response = await fetch('/css/components.css');
+                if (response.ok) {
+                    const css = await response.text();
+                    results += `<span class="success">✓ components.css (${css.length} bytes)</span><br>`;
+                } else {
+                    results += `<span class="error">✗ components.css (${response.status})</span><br>`;
+                }
+            } catch (error) {
+                results += `<span class="error">✗ components.css: ${error.message}</span><br>`;
+            }
+            
+            div.innerHTML = results;
+        }
+        
+        // Run all checks
+        checkServerStatus();
+        checkFiles();
+        checkJS();
+        checkCSS();
+    </script>
+</body>
+</html>

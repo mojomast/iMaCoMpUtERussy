@@ -1629,6 +1629,146 @@ app.post('/mcp/debug/breakpoints', authenticateAPIKey, intenseLimiter, asyncHand
  }));
 
 // ============================================================================
+// TERMINAL ENDPOINTS
+// ============================================================================
+
+// POST /mcp/terminal/write - Write text to terminal output
+app.post('/mcp/terminal/write', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+ const validation = validate('terminal.write.request', req.body);
+ if (!validation.success) {
+   throw MCPError.fromAJVValidation(validation.errors);
+ }
+
+ try {
+   const { text, addNewline = true } = req.body;
+
+   // Sanitize terminal text input
+   const sanitizedText = sanitizeTerminalText(text);
+   if (sanitizedText.length === 0) {
+     throw new MCPError('INVALID_REQUEST', 'Terminal text must be a non-empty string with valid characters');
+   }
+
+   logger.info('Terminal write request processed', {
+     endpoint: 'POST /mcp/terminal/write',
+     textLength: sanitizedText.length,
+     addNewline
+   });
+
+   // Write each character to terminal output address ($F1)
+   let bytesWritten = 0;
+   for (let i = 0; i < sanitizedText.length; i++) {
+     const charCode = sanitizedText.charCodeAt(i);
+     adapters.memory.write(0xF1, charCode, 1);
+     bytesWritten++;
+   }
+
+   // Add newline if requested
+   if (addNewline) {
+     adapters.memory.write(0xF1, 10, 1); // LF
+     bytesWritten++;
+   }
+
+   // Broadcast terminal write event
+   if (typeof broadcastEvent === 'function') {
+     broadcastEvent('terminal.write', { text: sanitizedText, addNewline, bytesWritten });
+   }
+
+   const result = { bytesWritten };
+   const responseValidation = validate('terminal.write.response', { success: true, data: result });
+   if (!responseValidation.success) {
+     logger.warn('Terminal write response validation failed', { errors: responseValidation.errors });
+   }
+
+   res.json(successResponse(result));
+ } catch (error) {
+   const stdError = ErrorHandler.standardizeError(error, 'mcp_server::terminal_write');
+   if (error instanceof MCPError) {
+     throw error;
+   }
+   throw new MCPError('INTERNAL_ERROR', 'Terminal write failed', stdError.message, 500);
+ }
+}));
+
+// GET /mcp/terminal/read - Read input from terminal buffer
+app.get('/mcp/terminal/read', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+ try {
+   logger.info('Terminal read request processed', {
+     endpoint: 'GET /mcp/terminal/read'
+   });
+
+   // Read from keyboard input buffer ($F0)
+   const inputBuffer = [];
+   let hasInput = false;
+   let bytesRead = 0;
+
+   // Read until buffer is empty (up to reasonable limit)
+   const maxRead = 256; // Same as keyboard buffer size
+   for (let i = 0; i < maxRead; i++) {
+     const charCode = adapters.memory.read(0xF0, 1).data.value;
+     if (charCode === 0) break; // No more input
+     inputBuffer.push(String.fromCharCode(charCode));
+     bytesRead++;
+     hasInput = true;
+   }
+
+   const input = inputBuffer.join('');
+
+   // Broadcast terminal read event
+   if (typeof broadcastEvent === 'function') {
+     broadcastEvent('terminal.read', { input, bytesRead, hasInput });
+   }
+
+   const result = { input, bytesRead, hasInput };
+   const responseValidation = validate('terminal.read.response', { success: true, data: result });
+   if (!responseValidation.success) {
+     logger.warn('Terminal read response validation failed', { errors: responseValidation.errors });
+   }
+
+   res.json(successResponse(result));
+ } catch (error) {
+   const stdError = ErrorHandler.standardizeError(error, 'mcp_server::terminal_read');
+   if (error instanceof MCPError) {
+     throw error;
+   }
+   throw new MCPError('INTERNAL_ERROR', 'Terminal read failed', stdError.message, 500);
+ }
+}));
+
+// POST /mcp/terminal/clear - Clear terminal buffer
+app.post('/mcp/terminal/clear', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+ try {
+   logger.info('Terminal clear request processed', {
+     endpoint: 'POST /mcp/terminal/clear'
+   });
+
+   // Clear keyboard buffer by writing to status register ($F2) to clear
+   adapters.memory.write(0xF2, 0, 1); // Writing 0 to $F2 clears the buffer
+
+   // For buffer size, we'll assume 256 (keyboard buffer size)
+   const bufferSize = 256;
+
+   // Broadcast terminal clear event
+   if (typeof broadcastEvent === 'function') {
+     broadcastEvent('terminal.clear', { cleared: true, bufferSize });
+   }
+
+   const result = { cleared: true, bufferSize };
+   const responseValidation = validate('terminal.clear.response', { success: true, data: result });
+   if (!responseValidation.success) {
+     logger.warn('Terminal clear response validation failed', { errors: responseValidation.errors });
+   }
+
+   res.json(successResponse(result));
+ } catch (error) {
+   const stdError = ErrorHandler.standardizeError(error, 'mcp_server::terminal_clear');
+   if (error instanceof MCPError) {
+     throw error;
+   }
+   throw new MCPError('INTERNAL_ERROR', 'Terminal clear failed', stdError.message, 500);
+ }
+}));
+
+// ============================================================================
 // QUEUE MANAGEMENT ENDPOINTS
 // ============================================================================
 

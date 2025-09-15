@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iMaCoMpUtERussy Debug</title>
+    <style>
+        body { font-family: monospace; background: #000; color: #00ff00; margin: 0; padding: 20px; }
+        .panel { border: 1px solid #00ff00; margin: 10px; padding: 10px; }
+        .panel-header { background: #00ff00; color: #000; padding: 5px; margin: -10px -10px 10px -10px; }
+        .error { color: #ff4444; }
+        .success { color: #44ff44; }
+        .debug-log { height: 200px; overflow-y: auto; border: 1px solid #333; padding: 10px; background: #111; }
+    </style>
+</head>
+<body>
+    <h1>iMaCoMpUtERussy Debug Interface</h1>
+    
+    <div class="panel">
+        <div class="panel-header">System Status</div>
+        <div id="system-status">Initializing...</div>
+    </div>
+    
+    <div class="panel">
+        <div class="panel-header">Debug Log</div>
+        <div id="debug-log" class="debug-log"></div>
+    </div>
+    
+    <div class="panel">
+        <div class="panel-header">Test Controls</div>
+        <button onclick="testMCP()">Test MCP Connection</button>
+        <button onclick="testJSModules()">Test JS Modules</button>
+        <button onclick="initializeDebugger()">Initialize Debugger</button>
+        <button onclick="loadMainApp()">Load Main App</button>
+    </div>
+    
+    <div class="panel">
+        <div class="panel-header">Simple Debugger Test</div>
+        <div id="simple-debugger">
+            <div>CPU State: <span id="cpu-state">Not initialized</span></div>
+            <div>Memory: <span id="memory-state">Not initialized</span></div>
+            <button onclick="createSimpleCPU()">Create Simple CPU</button>
+            <button onclick="testCPUStep()">Step CPU</button>
+        </div>
+    </div>
+
+    <script type="module">
+        const debugLog = document.getElementById('debug-log');
+        const systemStatus = document.getElementById('system-status');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff4444' : type === 'success' ? '#44ff44' : '#00ff00';
+            debugLog.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(message);
+        }
+        
+        // Make functions global for button clicks
+        window.log = log;
+        
+        window.testMCP = async function() {
+            try {
+                log('Testing MCP connection...');
+                const response = await fetch('http://localhost:8001/health');
+                const data = await response.json();
+                log(`MCP Server: ${data.status}`, 'success');
+                systemStatus.innerHTML = '<span class="success">✓ MCP Server Connected</span>';
+            } catch (error) {
+                log(`MCP Error: ${error.message}`, 'error');
+                systemStatus.innerHTML = '<span class="error">✗ MCP Server Error</span>';
+            }
+        };
+        
+        window.testJSModules = async function() {
+            try {
+                log('Testing JavaScript modules...');
+                
+                // Test CPU module
+                const cpuModule = await import('./js/cpu.js');
+                log('✓ CPU module loaded', 'success');
+                
+                // Test Memory module
+                const memoryModule = await import('./js/memory.js');
+                log('✓ Memory module loaded', 'success');
+                
+                // Test Debugger module
+                const debuggerModule = await import('./js/ui/debugger.js');
+                log('✓ Debugger module loaded', 'success');
+                
+                systemStatus.innerHTML += '<br><span class="success">✓ JS Modules OK</span>';
+            } catch (error) {
+                log(`Module Error: ${error.message}`, 'error');
+                systemStatus.innerHTML += '<br><span class="error">✗ Module Error</span>';
+            }
+        };
+        
+        window.initializeDebugger = async function() {
+            try {
+                log('Initializing debugger...');
+                const debuggerModule = await import('./js/ui/debugger.js');
+                
+                // Create a simple panel for testing
+                const testPanel = document.createElement('div');
+                testPanel.id = 'test-debugger';
+                testPanel.style.cssText = 'border: 1px solid #00ff00; padding: 10px; margin: 10px 0;';
+                document.body.appendChild(testPanel);
+                
+                debuggerModule.initializeDebugger('test-debugger');
+                log('✓ Debugger initialized', 'success');
+            } catch (error) {
+                log(`Debugger Error: ${error.message}`, 'error');
+            }
+        };
+        
+        window.loadMainApp = function() {
+            log('Loading main application...');
+            window.location.href = '/index.html';
+        };
+        
+        window.createSimpleCPU = async function() {
+            try {
+                const cpuModule = await import('./js/cpu.js');
+                const memoryModule = await import('./js/memory.js');
+                
+                window.testMemory = new memoryModule.iMaCoMpUtERussyMemory();
+                window.testCPU = new cpuModule.iMaCoMpUtERussyCPU({ memory: window.testMemory });
+                
+                document.getElementById('cpu-state').textContent = 'Initialized';
+                document.getElementById('memory-state').textContent = 'Initialized';
+                log('✓ Simple CPU and Memory created', 'success');
+            } catch (error) {
+                log(`CPU Creation Error: ${error.message}`, 'error');
+            }
+        };
+        
+        window.testCPUStep = function() {
+            if (window.testCPU) {
+                try {
+                    const state = window.testCPU.getRegisters();
+                    log(`CPU Step - PC: 0x${state.pc.toString(16)}, A: 0x${state.a.toString(16)}`);
+                    window.testCPU.step();
+                    const newState = window.testCPU.getRegisters();
+                    log(`After Step - PC: 0x${newState.pc.toString(16)}, A: 0x${newState.a.toString(16)}`);
+                } catch (error) {
+                    log(`CPU Step Error: ${error.message}`, 'error');
+                }
+            } else {
+                log('CPU not initialized', 'error');
+            }
+        };
+        
+        // Auto-test on load
+        log('Debug interface loaded');
+        testMCP();
+        testJSModules();
+    </script>
+</body>
+</html>

@@ -14,6 +14,41 @@ All notable changes to this project will be documented in this file. The format 
 - Updated README.md with emulator-specific setup instructions, UI feature documentation, and comprehensive usage examples
 - Improved sample program documentation with expected output and memory usage information
 
+## [2.4.0] - 2025-09-15
+
+### Added
+- **Video Display System Restoration**:
+  - Proper VideoDisplay class integration replacing fallback video object
+  - Working memory-mapped framebuffer rendering at $0200-$05FF address range
+  - VUP (Video Update) instruction (0xAB) correctly renders graphics to 256x192 canvas
+  - Video demo programs display crosshair patterns and other graphics properly
+
+- **Assembler Directive Enhancements**:
+  - Added .db (data byte) directive support alongside existing .byte directive
+  - Both .db and .byte directives work identically for data definitions
+  - Consistent parsing in both first and second pass assembly
+
+### Changed
+- **UI Layout Improvements**:
+  - Memory viewer panel width increased from 480px to 600px to eliminate horizontal scrolling
+  - Updated responsive design breakpoints for optimal memory display at different screen sizes
+  - Enhanced CSS styling for memory region buttons with hover effects and better spacing
+  - Optimized hex byte display formatting with proper spacing and alignment
+
+- **Memory Viewer Functionality**:
+  - Restored working memory region toggle buttons (Zero Page, Stack, I/O, Program, Video, High)
+  - Improved memory display layout with wider hex byte spacing (15px → 18px)
+  - Enhanced visual presentation of memory sections with proper region handling
+  - Fixed memory region toggle state management and UI updates
+
+### Fixed
+- Video canvas rendering issues that prevented graphics output
+- Memory region toggle buttons that were non-functional
+- Horizontal scrolling in memory hex display due to narrow panel width
+- Module loading inconsistencies causing intermittent assembler failures
+- Cache-busting issues with dynamic imports in browser environment
+- Layout responsiveness across different screen sizes and resolutions
+
 ## [2.3.0] - 2025-09-06
 
 ### Added

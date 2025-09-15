@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MCP Test</title>
+</head>
+<body>
+    <h1>MCP Connection Test</h1>
+    <button onclick="testMCP()">Test MCP Connection</button>
+    <div id="result"></div>
+    
+    <script>
+    async function testMCP() {
+        const resultDiv = document.getElementById('result');
+        try {
+            resultDiv.innerHTML = 'Testing connection...';
+            const response = await fetch('http://localhost:8001/health');
+            const data = await response.text();
+            resultDiv.innerHTML = `<h3>SUCCESS!</h3><pre>${data}</pre>`;
+        } catch (error) {
+            resultDiv.innerHTML = `<h3>ERROR:</h3><pre>${error.message}</pre>`;
+        }
+    }
+    </script>
+</body>
+</html>

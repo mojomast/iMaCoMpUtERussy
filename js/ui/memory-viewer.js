@@ -63,14 +63,11 @@ if (window.mcpWebSocket) {
         case 'video.setPixel':
         case 'video.clear':
         case 'video.update':
-          // Video events may affect video buffer memory (0x0200-0x05FF)
-          if (window.refreshMemoryDisplay) {
-            // Only refresh if viewing video memory region
-            if (currentStartAddr >= 0x0200 && currentStartAddr <= 0x05FF) {
-              window.refreshMemoryDisplay();
-            }
-          }
-          break;
+           // Video events may affect video buffer memory (0x0200-0x05FF) - refresh all regions
+           if (window.refreshMemoryDisplay) {
+             window.refreshMemoryDisplay();
+           }
+           break;
           
         default:
           // Log unknown events for debugging
@@ -89,17 +86,27 @@ if (window.mcpWebSocket) {
   console.warn('⚠ No MCP WebSocket available - memory viewer real-time updates disabled');
 }
 
+import { iMaCoMpUtERussyMemory } from '../memory.js';
+
+// Memory region definitions
+const MEMORY_REGIONS = [
+  { name: 'Zero Page', start: 0x0000, end: 0x00FF, color: '#00ffff' },
+  { name: 'Stack', start: 0x0100, end: 0x01FF, color: '#ff8800' },
+  { name: 'Video Buffer', start: 0x0200, end: 0x05FF, color: '#ff00ff' },
+  { name: 'User RAM', start: 0x0600, end: 0x7FFF, color: '#00ff00' },
+  { name: 'Video ROM', start: 0x8000, end: 0xBFFF, color: '#ffff00' },
+  { name: 'System ROM', start: 0xC000, end: 0xFFFF, color: '#ff4444' }
+];
+
 // Global variables for refresh function
-let currentMemory, currentStartAddr, currentLength, currentContainer;
+let currentMemory, currentContainer;
 
 /**
- * Render memory slice as hex + ASCII table
-  * @param {iMaCoMpUtERussyMemory|Uint8Array} memory - Memory instance (supports readByte or direct access)
- * @param {number} startAddr - Starting address (default: 0x0200 video buffer)
- * @param {number} length - Number of bytes to display (default: 0x200)
+ * Render multiple memory regions as separate sections with full content
+ * @param {iMaCoMpUtERussyMemory|Uint8Array} memory - Memory instance (supports readByte or direct access)
  * @param {HTMLElement} containerElement - Container element for rendering
  */
-export function renderMemorySlice(memory, startAddr = 0x0200, length = 0x200, containerElement) {
+export function renderMultiRegionMemory(memory, containerElement) {
     if (!containerElement) {
         console.warn('Container element not provided for memory viewer');
         return;
@@ -107,21 +114,70 @@ export function renderMemorySlice(memory, startAddr = 0x0200, length = 0x200, co
 
     // Store for refresh function
     currentMemory = memory;
-    currentStartAddr = startAddr;
-    currentLength = length;
     currentContainer = containerElement;
 
+    // Clear container and build multi-region view
+    let totalHtml = '';
+
+    // Initialize global memory state for all regions
+    if (!window.lastMemoryState) {
+        window.lastMemoryState = new Map();
+    }
+
+    for (const region of MEMORY_REGIONS) {
+        const regionHtml = renderRegion(memory, region);
+        totalHtml += regionHtml;
+    }
+
+    // Add AI/MCP activity log section
+    let logSection = '<div id="ai-mcp-log" class="ai-mcp-log-panel" style="margin-top: 20px; padding: 10px; border: 1px solid #00ff00; background: rgba(0,0,0,0.8);">';
+    logSection += '<h4 style="color: #00ff00; margin: 0 0 10px 0;">AI/MCP Activity Log</h4>';
+    logSection += '<div id="activity-log" style="height: 200px; overflow-y: auto; background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 12px; border: 1px solid #0f0;"></div>';
+    logSection += '</div>';
+
+    containerElement.innerHTML = totalHtml + logSection;
+
+    // Setup MCP log syncing after DOM is updated
+    const activityLog = containerElement.querySelector('#activity-log');
+    const mcpDisplay = document.getElementById('mcp-display');
+    if (mcpDisplay && !window.memoryLogSynced) {
+      const observer = new MutationObserver(() => {
+        if (activityLog) {
+          activityLog.innerHTML = mcpDisplay.innerHTML;
+          activityLog.scrollTop = activityLog.scrollHeight;
+        }
+      });
+      observer.observe(mcpDisplay, { childList: true, subtree: true });
+      window.memoryLogSynced = true;
+      console.log('Synced MCP logs to multi-region memory viewer');
+    }
+}
+
+/**
+ * Render a single memory region with full content
+ */
+function renderRegion(memory, region) {
+    const { name, start, end, color } = region;
+    const length = end - start + 1;
     const bytesPerRow = 16;
     const rows = Math.ceil(length / bytesPerRow);
 
-    let html = '<pre>';
+    // Region header
+    let html = `<div class="memory-region" style="margin-bottom: 20px; border: 2px solid ${color}; padding: 10px; background: rgba(0,0,0,0.9);">
+        <h3 style="color: ${color}; margin: 0 0 10px 0; font-family: monospace; font-size: 14px; border-bottom: 1px solid ${color}; padding-bottom: 5px;">
+            ${name} (0x${start.toString(16).toUpperCase()}-0x${end.toString(16).toUpperCase()})
+        </h3>
+        <div class="memory-content" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.2;">`;
 
+    // Memory content
     for (let row = 0; row < rows; row++) {
-        const rowStart = startAddr + (row * bytesPerRow);
-        const rowEnd = Math.min(rowStart + bytesPerRow, startAddr + length);
+        const rowStart = start + (row * bytesPerRow);
+        const rowEnd = Math.min(rowStart + bytesPerRow, end + 1);
 
         // Address
-        html += rowStart.toString(16).padStart(4, '0') + ': ';
+        html += `<div style="display: flex; margin-bottom: 2px;">
+            <span style="color: ${color}; font-weight: bold; min-width: 70px;">${rowStart.toString(16).padStart(4, '0')}:</span>
+            <span style="margin-left: 10px;">`;
 
         // Hex bytes
         for (let i = rowStart; i < rowEnd; i++) {
@@ -129,131 +185,47 @@ export function renderMemorySlice(memory, startAddr = 0x0200, length = 0x200, co
             if (memory.readByte) {
                 byte = memory.readByte(i);
             } else {
-                byte = memory[i];
+                byte = memory[i] || 0;
             }
-            const isChanged = window.lastMemoryState && window.lastMemoryState[i] !== byte;
+
+            // Check for changes
+            const regionKey = `${name}_${i}`;
+            const isChanged = window.lastMemoryState.has(regionKey) && window.lastMemoryState.get(regionKey) !== byte;
             const highlightClass = isChanged ? ' changed-byte' : '';
-            html += `<span class="byte${highlightClass}">${byte.toString(16).padStart(2, '0')}</span> `;
+
+            html += `<span class="byte${highlightClass}" style="margin-right: 3px; ${isChanged ? 'background-color: rgba(255, 0, 0, 0.3); border: 1px solid #ff0000;' : ''}">${byte.toString(16).padStart(2, '0')}</span>`;
+
+            // Update last memory state
+            window.lastMemoryState.set(regionKey, byte);
         }
 
         // Padding for incomplete rows
         for (let i = rowEnd; i < rowStart + bytesPerRow; i++) {
-            html += '   ';
+            html += '<span style="margin-right: 3px;">  </span>';
         }
 
         // ASCII representation
-        html += ' |';
+        html += '</span><span style="margin-left: 20px; color: #ccc;">|';
         for (let i = rowStart; i < rowEnd; i++) {
             let byte;
             if (memory.readByte) {
                 byte = memory.readByte(i);
             } else {
-                byte = memory[i];
+                byte = memory[i] || 0;
             }
-            const isChanged = window.lastMemoryState && window.lastMemoryState[i] !== byte;
+
+            const regionKey = `${name}_${i}`;
+            const isChanged = window.lastMemoryState.has(regionKey) && window.lastMemoryState.get(regionKey) !== byte;
             const highlightClass = isChanged ? ' changed-byte' : '';
             const char = (byte >= 32 && byte <= 126) ? String.fromCharCode(byte) : '.';
-            html += `<span class="char${highlightClass}">${char}</span>`;
+
+            html += `<span class="char${highlightClass}" style="${isChanged ? 'background-color: rgba(255, 0, 0, 0.3);' : ''}">${char}</span>`;
         }
-
-        html += '|\n';
+        html += '|</span></div>';
     }
 
-    html += '</pre>';
-
-    // Add AI/MCP activity log section
-    let logSection = containerElement.querySelector('#ai-mcp-log');
-    if (!logSection) {
-      logSection = document.createElement('div');
-      logSection.id = 'ai-mcp-log';
-      logSection.className = 'ai-mcp-log-panel';
-      logSection.innerHTML = '<h4>AI/MCP Activity Log</h4><div id="activity-log" style="height: 200px; overflow-y: auto; background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 12px; border: 1px solid #0f0;"></div>';
-      logSection.style.cssText = 'margin-top: 20px; padding: 10px; border: 1px solid #00ff00; background: rgba(0,0,0,0.8);';
-      containerElement.appendChild(logSection);
-    }
-
-    // Sync with MCP log display if available
-    const activityLog = logSection.querySelector('#activity-log');
-    const mcpDisplay = document.getElementById('mcp-display');
-    if (mcpDisplay && !window.memoryLogSynced) {
-      // Mirror MCP logs to memory viewer
-      const observer = new MutationObserver(() => {
-        activityLog.innerHTML = mcpDisplay.innerHTML;
-        activityLog.scrollTop = activityLog.scrollHeight;
-      });
-      observer.observe(mcpDisplay, { childList: true, subtree: true });
-      window.memoryLogSynced = true;
-      console.log('Synced MCP logs to memory viewer panel');
-    }
-
-    // Store current memory state for change detection
-    window.lastMemoryState = new Uint8Array(length);
-    for (let i = 0; i < length; i++) {
-      window.lastMemoryState[i] = memory.readByte ? memory.readByte(startAddr + i) : memory[startAddr + i];
-    }
-
-    // Assembly action logging and highlighting
-    const assemblyStart = 0x0600; // Typical program origin
-    const assemblyEnd = 0x0800;   // Typical program end
-    const assemblyChanges = [];
-    
-    // Detect assembly-related changes (program region writes)
-    if (startAddr <= assemblyEnd && startAddr + length >= assemblyStart) {
-      const assemblyRangeStart = Math.max(startAddr, assemblyStart);
-      const assemblyRangeEnd = Math.min(startAddr + length, assemblyEnd);
-      
-      for (let i = assemblyRangeStart; i < assemblyRangeEnd; i++) {
-        const addrIndex = i - startAddr;
-        const currentByte = memory.readByte ? memory.readByte(i) : memory[i];
-        const previousByte = window.lastMemoryState[addrIndex];
-        
-        if (previousByte !== undefined && currentByte !== previousByte) {
-          // Check if this looks like program code (non-zero, structured bytes)
-          if (currentByte !== 0 && currentByte !== 0xFF) {
-            assemblyChanges.push({
-              address: i,
-              oldValue: previousByte,
-              newValue: currentByte,
-              isAssembly: true
-            });
-          }
-        }
-      }
-    }
-
-    // Log assembly changes to MCP if available
-    if (assemblyChanges.length > 0 && window.logToMCP) {
-      const recentAssemblyAction = assemblyChanges.length;
-      window.logToMCP('info', `Assembly Memory Update: ${recentAssemblyAction} bytes changed in program region 0x0600-0x0800`, {
-        changes: assemblyChanges,
-        region: 'program',
-        timestamp: new Date().toISOString()
-      });
-      
-      // Broadcast assembly memory event
-      if (window.mcpWebSocket && window.mcpWebSocket.readyState === WebSocket.OPEN) {
-        window.mcpWebSocket.send(JSON.stringify({
-          type: 'memory.assemblyUpdate',
-          data: {
-            addressRange: { start: assemblyStart, end: assemblyEnd },
-            changes: assemblyChanges.length,
-            bytes: assemblyChanges.map(c => ({ addr: c.address, value: c.newValue }))
-          },
-          timestamp: new Date().toISOString()
-        }));
-      }
-    }
-
-    // Enhanced rendering with assembly highlighting
-    let enhancedHtml = html;
-    
-    // Highlight assembly changes in the hex display
-    if (assemblyChanges.length > 0) {
-      // Re-render the HTML with special highlighting for assembly changes
-      enhancedHtml = this.renderWithAssemblyHighlighting(memory, startAddr, length, assemblyChanges);
-    }
-
-    containerElement.innerHTML = enhancedHtml + logSection.outerHTML;
+    html += '</div></div>';
+    return html;
 }
 
 /**
@@ -261,16 +233,12 @@ export function renderMemorySlice(memory, startAddr = 0x0200, length = 0x200, co
  */
 export function refresh() {
     if (currentMemory && currentContainer) {
-        renderMemorySlice(currentMemory, currentStartAddr, currentLength, currentContainer);
+        renderMultiRegionMemory(currentMemory, currentContainer);
     } else {
         console.warn('No current memory view to refresh');
     }
 }
 
-/**
- * Alias for refresh function (for compatibility)
- */
-export const refreshMemoryDisplay = refresh;
 
 /**
  * Initialize memory viewer UI
@@ -385,9 +353,8 @@ export function initializeMemoryViewer(rootElementId) {
                     rootElement.appendChild(displayDiv);
                     memoryDisplay = displayDiv;
                 }
-                // Start at 0x0200 (video buffer) and show more useful memory regions
-                // Show video buffer + user RAM (0x0200-0x0800 = 1536 bytes)
-                renderMemorySlice(debuggerModule.memory, 0x0200, 0x600, memoryDisplay);
+                // Render all memory regions with full content
+                renderMultiRegionMemory(debuggerModule.memory, memoryDisplay);
             }
         }
     }).catch(err => {
@@ -449,8 +416,8 @@ export function refreshMemoryDisplay() {
         if (debuggerModule.memory) {
             const memoryDisplay = document.getElementById('memory-display');
             if (memoryDisplay) {
-                // Start at 0x0200 (video buffer) and show useful memory regions
-                renderMemorySlice(debuggerModule.memory, 0x0200, 0x600, memoryDisplay);
+                // Render all memory regions with full content
+                renderMultiRegionMemory(debuggerModule.memory, memoryDisplay);
             }
         }
     }).catch(err => {
@@ -542,22 +509,20 @@ export function refreshMemoryDisplayWithLogging() {
         if (debuggerModule.memory) {
             const memoryDisplay = document.getElementById('memory-display');
             if (memoryDisplay) {
-                // Show program region (0x0600-0x0800) plus some context
-                const programStart = 0x0600 - 0x0100; // Show 256 bytes before program
-                const programLength = 0x0200 + 0x0100; // 512 bytes of program + context
-                renderMemorySlice(debuggerModule.memory, programStart, programLength, memoryDisplay);
-                
+                // Render all memory regions with full content
+                renderMultiRegionMemory(debuggerModule.memory, memoryDisplay);
+
                 // Log assembly region status
                 const programBytes = [];
                 for (let i = 0x0600; i < 0x0800; i++) {
                     programBytes.push(debuggerModule.memory.readByte(i));
                 }
-                
+
                 const nonZeroBytes = programBytes.filter(b => b !== 0).length;
                 const assemblyDensity = (nonZeroBytes / programBytes.length * 100).toFixed(1);
-                
+
                 if (window.logToMCP) {
-                    window.logToMCP('info', `Memory Viewer: Program region 0x0600-0x0800 status`, {
+                    window.logToMCP('info', `Multi-Region Memory Viewer: Program region 0x0600-0x0800 status`, {
                         nonZeroBytes,
                         totalBytes: programBytes.length,
                         assemblyDensity: `${assemblyDensity}%`,

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iMaCoMpUtERussy Emulator</title>
+    <link rel="stylesheet" href="css/retro-theme.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+    <div id="main-layout">
+        <!-- Existing panels like debugger, memory-viewer, etc. -->
+        <div id="debugger" class="panel">
+            <div class="panel-header">
+                <span>Debugger</span>
+            </div>
+            <div class="panel-content">
+                <!-- Debugger content -->
+            </div>
+        </div>
+        
+        <div id="memory-viewer" class="panel">
+            <div class="panel-header">
+                <span>Memory Viewer</span>
+            </div>
+            <div class="panel-content">
+                <!-- Memory viewer content -->
+            </div>
+        </div>
+        
+        <div id="video-manager" class="panel">
+            <div class="panel-header">
+                <span>Video Manager</span>
+            </div>
+            <div class="panel-content">
+                <!-- Video manager content -->
+            </div>
+        </div>
+        
+        <!-- New MCP Natural Language Input Panel -->
+        <div id="mcp-input-panel" class="panel">
+            <div class="panel-header">
+                <span>MCP Natural Language Input</span>
+            </div>
+            <div class="panel-content">
+                <div class="nl-input-container">
+                    <textarea id="nl-input-textarea" placeholder="Enter natural language command (e.g., 'step the CPU' or 'reset CPU')..." rows="3" style="width: 100%; resize: vertical;"></textarea>
+                    <button id="nl-input-send-btn">Send Command</button>
+                    <div id="nl-input-log" style="margin-top: 10px; height: 100px; overflow-y: auto; border: 1px solid #00ff00; padding: 5px; background: #000; color: #00ff00; font-family: monospace;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Console/Terminal Panel -->
+        <div id="console" class="panel">
+            <div class="panel-header">
+                <span>Terminal I/O</span>
+            </div>
+            <div class="panel-content">
+                <!-- Console content will be populated by JS -->
+                <div style="padding: 20px; color: #00ff00; font-family: monospace;">
+                    <p>Loading terminal interface...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- MCP Display for logs -->
+        <div id="mcp-display" class="panel">
+            <div class="panel-header">
+                <span>MCP Logs</span>
+            </div>
+            <div class="panel-content">
+                <div style="height: 200px; overflow-y: auto; border: 1px solid #00ff00; padding: 5px; background: #000; color: #00ff00; font-family: monospace;">
+                    MCP (Model Context Protocol) interactions will appear here...
+                </div>
+            </div>
+        </div>
+        
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="panel" style="display: none;">
+            <div class="panel-header">
+                <span>UI Settings</span>
+            </div>
+            <div class="panel-content">
+                <!-- Settings content will be populated by JS -->
+                <div style="padding: 20px; color: #00ff00; font-family: monospace;">
+                    <p>Loading settings interface...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="panel-sidebar">
+        <!-- Sidebar for layout controls -->
+    </div>
+    
+    <!-- Fixed bottom toolbar for panel toggles -->
+    <div id="panel-toolbar" class="toolbar">
+        <div class="toolbar-content">
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-memory" checked data-panel="memory-viewer">
+                <span class="toggle-label">Memory</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-debugger" checked data-panel="debugger">
+                <span class="toggle-label">Registers</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-video" checked data-panel="video-manager">
+                <span class="toggle-label">Video</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-assembly" data-panel="assembly-panel">
+                <span class="toggle-label">Assembly</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-mcp-input" data-panel="mcp-input-panel">
+                <span class="toggle-label">MCP Input</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-mcp-logs" data-panel="mcp-display">
+                <span class="toggle-label">MCP Logs</span>
+            </label>
+            <label class="toolbar-toggle">
+                <input type="checkbox" id="toggle-console" data-panel="console">
+                <span class="toggle-label">Console</span>
+            </label>
+        </div>
+    </div>
+    
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

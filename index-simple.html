@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iMaCoMpUtERussy - Fixed</title>
+    <link rel="stylesheet" href="css/retro-theme.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+    <div id="loading-status" style="position: fixed; top: 20px; left: 20px; background: #000; color: #00ff00; padding: 10px; border: 1px solid #00ff00; z-index: 1000;">
+        <div>🚀 Loading iMaCoMpUtERussy...</div>
+        <div id="load-progress">Initializing...</div>
+    </div>
+
+    <div id="main-layout">
+        <!-- Debugger Panel -->
+        <div id="debugger" class="panel">
+            <div class="panel-header">
+                <span>Debugger</span>
+            </div>
+            <div class="panel-content">
+                <div id="debugger-status">Initializing debugger...</div>
+                <div id="cpu-registers" style="margin-top: 10px; font-family: monospace;"></div>
+                <div id="cpu-controls" style="margin-top: 10px;">
+                    <button onclick="window.cpuStep && window.cpuStep()">Step</button>
+                    <button onclick="window.cpuReset && window.cpuReset()">Reset</button>
+                    <button onclick="window.cpuRun && window.cpuRun()">Run</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Memory Viewer Panel -->
+        <div id="memory-viewer" class="panel">
+            <div class="panel-header">
+                <span>Memory Viewer</span>
+            </div>
+            <div class="panel-content">
+                <div id="memory-status">Initializing memory viewer...</div>
+                <div id="memory-display" style="margin-top: 10px; font-family: monospace; font-size: 10px; height: 200px; overflow-y: auto;"></div>
+            </div>
+        </div>
+        
+        <!-- Video Manager Panel -->
+        <div id="video-manager" class="panel">
+            <div class="panel-header">
+                <span>Video Manager</span>
+            </div>
+            <div class="panel-content">
+                <div id="video-status">Initializing video...</div>
+                <canvas id="video-canvas" width="256" height="192" style="border: 1px solid #00ff00; background: #000;"></canvas>
+            </div>
+        </div>
+        
+        <!-- MCP Input Panel -->
+        <div id="mcp-input-panel" class="panel">
+            <div class="panel-header">
+                <span>MCP Natural Language Input</span>
+            </div>
+            <div class="panel-content">
+                <textarea id="nl-input-textarea" placeholder="Enter command (e.g., 'step CPU')..." rows="3" style="width: 100%; resize: vertical;"></textarea>
+                <button id="nl-input-send-btn" onclick="sendMCPCommand()">Send Command</button>
+                <div id="nl-input-log" style="margin-top: 10px; height: 100px; overflow-y: auto; border: 1px solid #00ff00; padding: 5px; background: #000; color: #00ff00; font-family: monospace;"></div>
+            </div>
+        </div>
+        
+        <!-- Console Panel -->
+        <div id="console" class="panel">
+            <div class="panel-header">
+                <span>Terminal I/O</span>
+            </div>
+            <div class="panel-content">
+                <div id="console-status">Initializing console...</div>
+                <div id="console-output" style="height: 150px; overflow-y: auto; border: 1px solid #00ff00; padding: 5px; background: #000; color: #00ff00; font-family: monospace;"></div>
+                <input type="text" id="console-input" placeholder="Type here..." style="width: 100%; margin-top: 5px;">
+            </div>
+        </div>
+        
+        <!-- MCP Logs Panel -->
+        <div id="mcp-display" class="panel">
+            <div class="panel-header">
+                <span>MCP Logs</span>
+            </div>
+            <div class="panel-content">
+                <div id="mcp-log" style="height: 200px; overflow-y: auto; border: 1px solid #00ff00; padding: 5px; background: #000; color: #00ff00; font-family: monospace;">
+                    MCP system ready...<br>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bottom toolbar -->
+    <div id="panel-toolbar" style="position: fixed; bottom: 0; left: 0; right: 0; background: #000; border-top: 1px solid #00ff00; padding: 10px; display: flex; gap: 20px; z-index: 100;">
+        <label><input type="checkbox" checked data-panel="debugger"> Debugger</label>
+        <label><input type="checkbox" checked data-panel="memory-viewer"> Memory</label>
+        <label><input type="checkbox" checked data-panel="video-manager"> Video</label>
+        <label><input type="checkbox" data-panel="mcp-input-panel"> MCP Input</label>
+        <label><input type="checkbox" data-panel="console"> Console</label>
+        <label><input type="checkbox" data-panel="mcp-display"> MCP Logs</label>
+    </div>
+
+    <script type="module">
+        // Progressive loading with error handling
+        let cpu, memory;
+        let loadProgress = document.getElementById('load-progress');
+        let mcpLog = document.getElementById('mcp-log');
+        
+        function log(message, target = 'mcp-log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEl = document.getElementById(target);
+            if (logEl) {
+                logEl.innerHTML += `[${timestamp}] ${message}<br>`;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            console.log(message);
+        }
+        
+        function updateProgress(step) {
+            loadProgress.textContent = step;
+            log(step);
+        }
+        
+        // Global functions for buttons
+        window.cpuStep = function() {
+            if (cpu) {
+                try {
+                    cpu.step();
+                    updateCPUDisplay();
+                    log('CPU stepped');
+                } catch (error) {
+                    log(`CPU step error: ${error.message}`);
+                }
+            }
+        };
+        
+        window.cpuReset = function() {
+            if (cpu) {
+                try {
+                    cpu.reset();
+                    updateCPUDisplay();
+                    log('CPU reset');
+                } catch (error) {
+                    log(`CPU reset error: ${error.message}`);
+                }
+            }
+        };
+        
+        window.cpuRun = function() {
+            if (cpu) {
+                try {
+                    for (let i = 0; i < 10; i++) {
+                        cpu.step();
+                    }
+                    updateCPUDisplay();
+                    log('CPU ran 10 steps');
+                } catch (error) {
+                    log(`CPU run error: ${error.message}`);
+                }
+            }
+        };
+        
+        window.sendMCPCommand = async function() {
+            const input = document.getElementById('nl-input-textarea');
+            const command = input.value.trim();
+            if (!command) return;
+            
+            log(`Sending MCP command: ${command}`, 'nl-input-log');
+            
+            try {
+                // Simple command processing
+                if (command.includes('step')) {
+                    window.cpuStep();
+                    log('✓ Command executed locally', 'nl-input-log');
+                } else if (command.includes('reset')) {
+                    window.cpuReset();
+                    log('✓ Command executed locally', 'nl-input-log');
+                } else if (command.includes('run')) {
+                    window.cpuRun();
+                    log('✓ Command executed locally', 'nl-input-log');
+                } else {
+                    // Try MCP server
+                    const response = await fetch('http://localhost:8001/mcp/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ command })
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        log(`✓ MCP response: ${JSON.stringify(result)}`, 'nl-input-log');
+                    } else {
+                        log(`✗ MCP error: ${response.status}`, 'nl-input-log');
+                    }
+                }
+                
+                input.value = '';
+            } catch (error) {
+                log(`✗ Command error: ${error.message}`, 'nl-input-log');
+            }
+        };
+        
+        function updateCPUDisplay() {
+            if (cpu) {
+                const registers = cpu.getRegisters();
+                document.getElementById('cpu-registers').innerHTML = `
+                    PC: 0x${registers.pc.toString(16).padStart(4, '0').toUpperCase()}<br>
+                    A: 0x${registers.a.toString(16).padStart(2, '0').toUpperCase()}<br>
+                    X: 0x${registers.x.toString(16).padStart(2, '0').toUpperCase()}<br>
+                    Y: 0x${registers.y.toString(16).padStart(2, '0').toUpperCase()}<br>
+                    SP: 0x${registers.sp.toString(16).padStart(2, '0').toUpperCase()}<br>
+                    Status: 0x${registers.status.toString(16).padStart(2, '0').toUpperCase()}
+                `;
+            }
+        }
+        
+        function updateMemoryDisplay() {
+            if (memory) {
+                let html = '';
+                for (let addr = 0; addr < 256; addr += 16) {
+                    html += `0x${addr.toString(16).padStart(4, '0').toUpperCase()}: `;
+                    for (let i = 0; i < 16; i++) {
+                        const value = memory.readByte(addr + i);
+                        html += `${value.toString(16).padStart(2, '0').toUpperCase()} `;
+                    }
+                    html += '<br>';
+                }
+                document.getElementById('memory-display').innerHTML = html;
+            }
+        }
+        
+        // Initialize step by step
+        async function initializeSystem() {
+            try {
+                updateProgress('Checking MCP server...');
+                const healthResponse = await fetch('http://localhost:8001/health');
+                if (healthResponse.ok) {
+                    log('✓ MCP server connected');
+                } else {
+                    log('⚠ MCP server not responding');
+                }
+                
+                updateProgress('Loading CPU module...');
+                const cpuModule = await import('./js/cpu.js');
+                log('✓ CPU module loaded');
+                
+                updateProgress('Loading Memory module...');
+                const memoryModule = await import('./js/memory.js');
+                log('✓ Memory module loaded');
+                
+                updateProgress('Creating CPU and Memory...');
+                memory = new memoryModule.iMaCoMpUtERussyMemory();
+                cpu = new cpuModule.iMaCoMpUtERussyCPU({ memory });
+                log('✓ CPU and Memory created');
+                
+                updateProgress('Initializing displays...');
+                updateCPUDisplay();
+                updateMemoryDisplay();
+                
+                document.getElementById('debugger-status').innerHTML = '<span style="color: #44ff44;">✓ Debugger ready</span>';
+                document.getElementById('memory-status').innerHTML = '<span style="color: #44ff44;">✓ Memory viewer ready</span>';
+                document.getElementById('video-status').innerHTML = '<span style="color: #44ff44;">✓ Video ready</span>';
+                document.getElementById('console-status').innerHTML = '<span style="color: #44ff44;">✓ Console ready</span>';
+                
+                updateProgress('System ready!');
+                document.getElementById('loading-status').style.background = '#004400';
+                
+                log('🎉 iMaCoMpUtERussy system fully initialized');
+                
+            } catch (error) {
+                updateProgress(`❌ Error: ${error.message}`);
+                log(`❌ Initialization error: ${error.message}`);
+                document.getElementById('loading-status').style.background = '#440000';
+            }
+        }
+        
+        // Toolbar functionality
+        document.querySelectorAll('#panel-toolbar input[type="checkbox"]').forEach(toggle => {
+            toggle.addEventListener('change', (e) => {
+                const panelId = e.target.dataset.panel;
+                const panel = document.getElementById(panelId);
+                if (panel) {
+                    panel.style.display = e.target.checked ? 'flex' : 'none';
+                    log(`Panel ${panelId} ${e.target.checked ? 'shown' : 'hidden'}`);
+                }
+            });
+        });
+        
+        // Console input
+        document.getElementById('console-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const output = document.getElementById('console-output');
+                output.innerHTML += `> ${e.target.value}<br>`;
+                e.target.value = '';
+                output.scrollTop = output.scrollHeight;
+            }
+        });
+        
+        // Start initialization
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeSystem);
+        } else {
+            initializeSystem();
+        }
+        
+    </script>
+</body>
+</html>

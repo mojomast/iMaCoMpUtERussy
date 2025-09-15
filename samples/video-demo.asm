@@ -1,7 +1,7 @@
-; VideoStorage-8 Video Buffer Demo
+; VideoStorage-8 Video Buffer Demo with VUP
 ; Writes a simple pattern to the video buffer region ($0200-$05FF)
+; Uses VUP opcode to update the display
 ; Demonstrates STA, LDX, INX, and absolute addressing
-; Writes alternating 0xFF and 0x00 to first 8 bytes of video buffer
 
 .org 0x0600     ; Set program origin to user RAM start
 
@@ -38,6 +38,8 @@ VIDEO_DEMO:
     LDA #0       ; Load 0x00
     STA 0x0200,X ; Store to $0207
 
+    .db 0xAB     ; VUP - Video Update Display (0xAB)
+
     HLT          ; Halt execution
 
 ; To assemble and load this program:
@@ -46,3 +48,4 @@ VIDEO_DEMO:
 ; 3. Call memory.loadProgram(0x0600, assembledBytes) from js/memory.js
 ; 4. Run the CPU starting at $0600
 ; 5. Check video buffer $0200-$0207 for pattern FF 00 FF 00 FF 00 FF 00
+; 6. Check that the canvas updates with the pattern
