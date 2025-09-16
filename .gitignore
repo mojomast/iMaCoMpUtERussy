@@ -57,12 +57,7 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
-.env.*              # All dotenv variant files (local, development, production, test, etc.)
-.env.local          # Local overrides (commonly used by CRA/Vite)
-.env.test
-.env.production
-.env.development
-.env.example        # add example to repo (ignored here to ensure only template)
+.env.backup       # add example to repo (ignored here to ensure only template)
 .envrc              # direnv
 
 # Temporary files
