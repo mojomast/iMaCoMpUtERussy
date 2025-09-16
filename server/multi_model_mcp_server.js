@@ -1,9 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load environment variables from .env file
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 class MultiModelMCPServer {
   constructor() {
@@ -36,6 +40,19 @@ class MultiModelMCPServer {
           processedModel.apiKey = process.env[envVar] || null;
         }
         this.models[key] = processedModel;
+      }
+      
+      // Also add Requesty as a configured model if API key exists
+      if (process.env.REQUESTY_API_KEY && !process.env.REQUESTY_API_KEY.includes('your-')) {
+        this.models['requesty'] = {
+          name: 'Requesty Gateway',
+          provider: 'Requesty',
+          apiKey: process.env.REQUESTY_API_KEY,
+          endpoint: process.env.REQUESTY_ENDPOINT || 'https://api.requesty.ai/v1/chat/completions',
+          modelId: process.env.DEFAULT_MODEL || 'auto',
+          capabilities: ['generation', 'optimization', 'debugging', 'testing'],
+          supported: true
+        };
       }
 
       // Load task defaults and rate limits
@@ -148,17 +165,34 @@ class MultiModelMCPServer {
    * @returns {Promise<string>} Simulated response
    */
   async callAIModel(prompt, model) {
-    // This is a placeholder - actual implementation would call the specific provider's API
-    return new Promise((resolve, reject) => {
-      // Simulate API call delay
-      setTimeout(() => {
-        if (Math.random() > 0.9) { // 10% failure rate for testing
-          reject(new Error(`API call failed for ${model.name}`));
-        } else {
-          resolve(`Processed by ${model.name}: ${prompt.slice(0, 50)}...`);
-        }
-      }, 100 + Math.random() * 200);
-    });
+    // Import the actual AI handler
+    const AIModelHandler = (await import('./ai-model-handler.js')).default;
+    const handler = new AIModelHandler();
+    
+    // Map model configuration to provider name
+    let providerName = 'openai'; // default
+    if (model.name.includes('claude') || model.name.includes('anthropic')) {
+      providerName = 'anthropic';
+    } else if (model.name.includes('gpt') || model.name.includes('openai')) {
+      providerName = 'openai';
+    } else if (model.apiKey && model.apiKey.startsWith('sk-or-')) {
+      providerName = 'openrouter';
+    } else if (model.apiKey && (model.apiKey.startsWith('rq_') || model.apiKey.startsWith('sk-Ko'))) {
+      providerName = 'requesty';
+    }
+    
+    try {
+      const result = await handler.callProvider(providerName, prompt, { model: model.modelId });
+      if (result.success) {
+        return result.content || result.assemblyCode || 'No content generated';
+      } else {
+        throw new Error(result.error || 'AI generation failed');
+      }
+    } catch (error) {
+      // Fallback to placeholder for testing
+      console.warn('AI handler failed, using placeholder:', error.message);
+      return `[Simulated] ${model.name}: ${prompt.slice(0, 50)}...`;
+    }
   }
 
   /**

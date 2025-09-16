@@ -1,0 +1,33 @@
+[
+  {
+    "id": "task_1757980495479_ws175wj3t",
+    "prompt": "Generate a simple 6502 assembly program that counts from 1 to 10",
+    "type": "generation",
+    "priority": "normal",
+    "status": "queued",
+    "created": "2025-09-15T23:54:55.479Z",
+    "started": null,
+    "completed": null,
+    "result": {},
+    "errors": [],
+    "metadata": {
+      "requestId": "test-123"
+    }
+  },
+  {
+    "id": "task_1757981486928_qq54nhe1l",
+    "prompt": "Create a bubble sort algorithm in 6502 assembly",
+    "type": "generation",
+    "priority": "normal",
+    "status": "queued",
+    "created": "2025-09-16T00:11:26.928Z",
+    "started": null,
+    "completed": null,
+    "result": {},
+    "errors": [],
+    "metadata": {
+      "timestamp": "2025-09-15 20:11:26",
+      "source": "test-script"
+    }
+  }
+]

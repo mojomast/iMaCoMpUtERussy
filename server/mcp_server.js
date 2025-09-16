@@ -21,6 +21,7 @@ import PromptQueue from '../agent/queue-manager.js';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createDeveloperAdapters } from './mcp_developer_adapter.js';
 import MultiModelMCPServer from './multi_model_mcp_server.js';
+import AIModelHandler from './ai-model-handler.js';
 import WebSocket from 'ws';
 // Winston structured logging setup
 // Define __dirname for ESM
@@ -2280,8 +2281,26 @@ async function startServer() {
     initializeAdapters();
     console.log('Adapters initialized successfully');
 
+    // Initialize both the multi-model server and the AI handler
     multiModelServer = new MultiModelMCPServer();
     console.log('MultiModelMCPServer initialized successfully');
+    
+    // Also create an AI model handler instance for direct use
+    const aiHandler = new AIModelHandler();
+    
+    // Override the generateWithBestModel method to use the actual AI handler
+    multiModelServer.generateWithBestModel = async function(prompt, task, options) {
+      try {
+        return await aiHandler.generateWithBestModel(prompt, task, options);
+      } catch (error) {
+        console.error('AI Handler error:', error);
+        throw error;
+      }
+    };
+    
+    // Check configuration status
+    const configStatus = aiHandler.getConfigStatus();
+    console.log('AI Handler configuration:', configStatus);
 
     initializeQueue();
     console.log('Queue initialized successfully');
