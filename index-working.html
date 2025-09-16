@@ -3,6 +3,487 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iMaCoMpUtERussy - 8-bit CPU Emulator</title>
+    <style>
+        /* Enhanced layout for better UX */
+        body { margin: 0; padding: 0; background: #000; color: #00ff00; font-family: 'Courier New', monospace; }
+        
+        #header { 
+            background: linear-gradient(90deg, #001100, #002200); 
+            padding: 10px 20px; 
+            border-bottom: 2px solid #00ff00; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        
+        #header h1 { margin: 0; color: #00ff00; font-size: 24px; }
+        #header .status { display: flex; gap: 20px; align-items: center; }
+        
+        /* Improved layout: much wider side panels, narrower center */
+        #main-container { 
+            display: grid; 
+            grid-template-columns: 480px 1fr 600px; 
+            grid-template-rows: 1fr; 
+            height: calc(100vh - 120px); 
+            gap: 10px; 
+            padding: 10px; 
+        }
+        
+        #left-panel, #right-panel { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; 
+        }
+        
+        /* Center panel: Video on top, Terminal and AI below */
+        #center-panel { 
+            display: grid; 
+            grid-template-rows: 1fr 1fr 1fr; 
+            gap: 10px; 
+        }
+        
+        .panel { 
+            background: rgba(0, 0, 0, 0.9); 
+            border: 1px solid #00ff00; 
+            border-radius: 4px; 
+            overflow: hidden; 
+            display: flex; 
+            flex-direction: column;
+        }
+        
+        .panel-header { 
+            background: rgba(0, 255, 0, 0.1); 
+            padding: 8px 12px; 
+            border-bottom: 1px solid #00ff00; 
+            font-weight: bold; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-content { 
+            flex: 1; 
+            padding: 10px; 
+            overflow: auto; 
+        }
+        
+        .btn { 
+            background: #001100; 
+            border: 1px solid #00ff00; 
+            color: #00ff00; 
+            padding: 6px 12px; 
+            cursor: pointer; 
+            border-radius: 2px;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        
+        .btn:hover { background: #002200; }
+        .btn:active { background: #003300; }
+        .btn.primary { background: #004400; }
+        .btn.danger { border-color: #ff4444; color: #ff4444; }
+        .btn.danger:hover { background: #220000; }
+        
+        .control-group { 
+            display: flex; 
+            gap: 8px; 
+            margin-bottom: 10px; 
+            flex-wrap: wrap;
+        }
+        
+        .status-good { color: #44ff44; }
+        .status-warn { color: #ffaa00; }
+        .status-error { color: #ff4444; }
+        
+        select, input, textarea { 
+            background: #000; 
+            border: 1px solid #00ff00; 
+            color: #00ff00; 
+            padding: 4px; 
+            font-family: inherit;
+            font-size: 12px;
+        }
+        
+        textarea { resize: vertical; }
+        
+        #console-output, #memory-display, #mcp-log { 
+            background: #000; 
+            border: 1px solid #004400; 
+            padding: 8px; 
+            font-family: 'Courier New', monospace; 
+            font-size: 11px; 
+            overflow-y: auto; 
+            height: 120px;
+        }
+        
+        #video-canvas { 
+            border: 1px solid #00ff00; 
+            background: #000; 
+            display: block; 
+            margin: 0 auto;
+            max-width: 90%;
+            max-height: 140px;
+            width: auto;
+            height: auto;
+        }
+        
+        .register-display { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 8px; 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px;
+        }
+        
+        .register-item { 
+            background: #001100; 
+            border: 1px solid #004400; 
+            padding: 4px 8px; 
+            border-radius: 2px;
+        }
+        
+        #footer { 
+            background: #001100; 
+            border-top: 1px solid #00ff00; 
+            padding: 8px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div id="header">
+        <h1>🎮 iMaCoMpUtERussy</h1>
+        <div class="status">
+            <div>MCP: <span id="mcp-status" class="status-warn">Connecting...</span></div>
+            <div>CPU: <span id="cpu-status" class="status-warn">Initializing...</span></div>
+            <div>Memory: <span id="memory-status" class="status-warn">Loading...</span></div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div id="main-container">
+        <!-- Left Panel: Controls & Assembly -->
+        <div id="left-panel">
+            <!-- CPU Controls -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>🔧 CPU Controls</span>
+                </div>
+                <div class="panel-content">
+                    <div class="control-group">
+                        <button class="btn primary" onclick="stepCPU()">Step</button>
+                        <button class="btn" onclick="runCPU()">Run</button>
+                        <button class="btn danger" onclick="resetCPU()">Reset</button>
+                        <button class="btn" onclick="stopCPU()">Stop</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Speed:</label>
+                        <select id="cpu-speed">
+                            <option value="1">1 Hz</option>
+                            <option value="10">10 Hz</option>
+                            <option value="100" selected>100 Hz</option>
+                            <option value="1000">1 kHz</option>
+                        </select>
+                    </div>
+                    
+                    <div id="cpu-registers" class="register-display">
+                        <div class="register-item">PC: <span id="reg-pc">0000</span></div>
+                        <div class="register-item">A: <span id="reg-a">00</span></div>
+                        <div class="register-item">X: <span id="reg-x">00</span></div>
+                        <div class="register-item">Y: <span id="reg-y">00</span></div>
+                        <div class="register-item">SP: <span id="reg-sp">FF</span></div>
+                        <div class="register-item">Status: <span id="reg-status">00</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Assembly Editor -->
+            <div class="panel" style="flex: 1;">
+                <div class="panel-header">
+                    <span>✏️ Assembly Editor</span>
+                    <span id="editor-status">Ready</span>
+                </div>
+                <div class="panel-content">
+                    <textarea id="assembly-editor" placeholder="Enter assembly code here..." style="width: 100%; height: 100%; min-height: 200px; resize: none; font-size: 11px; line-height: 1.4;"></textarea>
+                    <div class="control-group" style="margin-top: 8px;">
+                        <button class="btn primary" onclick="assembleAndLoad()">Assemble & Load</button>
+                        <button class="btn" onclick="clearEditor()">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Panel: Video, Terminal & AI -->
+        <div id="center-panel">
+            <!-- Video Display -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>📺 Video Display</span>
+                    <span>256x192</span>
+                </div>
+                <div class="panel-content" style="text-align: center; padding: 10px;">
+                    <canvas id="video-canvas" width="256" height="192"></canvas>
+                    <div style="margin-top: 8px;">
+                        <button class="btn" onclick="clearVideo()">Clear</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal I/O -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>💻 Terminal I/O</span>
+                    <button class="btn" onclick="clearConsole()">Clear</button>
+                </div>
+                <div class="panel-content">
+                    <div id="console-output"></div>
+                </div>
+            </div>
+
+            <!-- AI Assistant -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>🤖 AI Assistant</span>
+                </div>
+                <div class="panel-content">
+                    <textarea id="mcp-input" placeholder="Ask me to do something..." rows="2" style="width: 100%;"></textarea>
+                    <div class="control-group" style="margin-top: 8px;">
+                        <button class="btn primary" onclick="sendMCPCommand()">Send</button>
+                        <button class="btn" onclick="clearMCPLog()">Clear Log</button>
+                    </div>
+                    <div id="mcp-log" style="height: 80px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Memory & System -->
+        <div id="right-panel">
+            <!-- System Logs -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>📋 System Logs</span>
+                    <button class="btn" onclick="clearSystemLog()">Clear</button>
+                </div>
+                <div class="panel-content">
+                    <div id="system-log" style="height: 400px; overflow-y: auto; background: #000; border: 1px solid #004400; padding: 8px; font-size: 11px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div id="footer">
+        <div>iMaCoMpUtERussy v2.1.0 - Autonomous 8-bit CPU Emulator (WORKING VERSION)</div>
+        <div>
+            <span id="system-time"></span> | 
+            <span>Status: Ready</span>
+        </div>
+    </div>
+
+    <script>
+        // Simple logging function
+        function log(message, target = 'system-log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById(target);
+            if (logElement) {
+                const logEntry = document.createElement('div');
+                logEntry.style.color = '#00ff00';
+                logEntry.style.marginBottom = '2px';
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                logElement.appendChild(logEntry);
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+            console.log(message);
+        }
+
+        // Simple system status update
+        function updateSystemStatus(elementId, text, type) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+                element.className = `status-${type}`;
+            }
+        }
+
+        // AI command handler with proper contextual prompts
+        async function sendMCPCommand() {
+            const input = document.getElementById('mcp-input');
+            const command = input.value.trim();
+            if (!command) return;
+
+            log(`AI Command: ${command}`, 'mcp-log');
+            
+            // Generate contextual prompt based on command type
+            let contextualPrompt;
+            const lowerCmd = command.toLowerCase();
+            
+            if (lowerCmd.includes('joke') || lowerCmd.includes('funny')) {
+                contextualPrompt = `Tell me a programming joke or computer joke.`;
+            } else if (lowerCmd.includes('hello') || lowerCmd.includes('hi ') || lowerCmd.includes('greet')) {
+                contextualPrompt = `Generate a friendly greeting response. Be creative and personable.`;
+            } else if (lowerCmd.includes('help') || lowerCmd.includes('what') || lowerCmd.includes('how')) {
+                contextualPrompt = `You are an AI assistant for a 6502 CPU emulator. Help the user with: "${command}"\n\nYou can help with:\n- CPU operations (step, run, reset)\n- Assembly language\n- Graphics programming\n\nProvide a helpful response.`;
+            } else if (lowerCmd.includes('draw') || lowerCmd.includes('graphics') || lowerCmd.includes('pixel') || lowerCmd.includes('line') || lowerCmd.includes('square') || lowerCmd.includes('circle')) {
+                contextualPrompt = `Generate 6502 assembly code for graphics: "${command}"\n\nRequirements:\n- Start with .org $0600\n- Use LDA #color, STA $address format\n- Video memory starts at $0200 (32 columns wide)\n- Colors: 1=green, 2=yellow, 3=red\n- End with HLT\n\nExample for red square:\n.org $0600\nLDA #3\nSTA $0200\nSTA $0201\nSTA $0220\nSTA $0221\nHLT\n\nNow generate code for: ${command}`;
+            } else if (lowerCmd.includes('story') || lowerCmd.includes('tell me')) {
+                contextualPrompt = `Tell an interesting story or anecdote related to: "${command}"`;
+            } else if (lowerCmd.includes('explain') || lowerCmd.includes('what is') || lowerCmd.includes('define')) {
+                contextualPrompt = `Provide a clear explanation for: "${command}"`;
+            } else {
+                contextualPrompt = `Respond appropriately to this request: "${command}"\n\nBe helpful, creative, and contextually relevant. If it's about programming or computing, provide technical insights. If it's casual conversation, be friendly and engaging.`;
+            }
+
+            try {
+                log(`🔍 Sending contextual request to AI...`, 'mcp-log');
+                const response = await fetch('http://localhost:8001/mcp/ai/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': 'default-api-key-change-in-production'
+                    },
+                    body: JSON.stringify({
+                        prompt: contextualPrompt,
+                        task: 'generation',
+                        options: {
+                            maxTokens: 400,
+                            temperature: 0.7
+                        }
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`🔍 AI Response Status: ${response.status}`, 'mcp-log');
+                    
+                    if (result.success && result.data && result.data.content && result.data.content.trim()) {
+                        const content = result.data.content.trim();
+                        log(`✅ AI Response (${content.length} chars): ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}`, 'mcp-log');
+                        
+                        // For graphics commands, try to load the assembly
+                        if (lowerCmd.includes('draw') || lowerCmd.includes('graphics') || lowerCmd.includes('pixel') || lowerCmd.includes('line') || lowerCmd.includes('square') || lowerCmd.includes('circle')) {
+                            if (content.includes('.org') || content.includes('LDA') || content.includes('STA')) {
+                                document.getElementById('assembly-editor').value = content;
+                                document.getElementById('editor-status').textContent = 'AI Generated';
+                                log('🎨 Graphics assembly loaded into editor! Click "Assemble & Load" to run it.', 'mcp-log');
+                            } else {
+                                log('💬 AI Response (not assembly): ' + content, 'mcp-log');
+                            }
+                        } else {
+                            // For non-graphics commands, just display the response
+                            log('💬 AI Response: ' + content, 'mcp-log');
+                        }
+                    } else {
+                        log(`⚠ grok-code-fast-1 returned empty content (${result.data?.tokensUsed || 0} tokens used)`, 'mcp-log');
+                        log('This is a known issue with the grok-code-fast-1 model. Try rephrasing your request.', 'mcp-log');
+                    }
+                } else {
+                    log(`❌ AI request failed: ${response.status}`, 'mcp-log');
+                    const errorText = await response.text();
+                    log(`❌ Error details: ${errorText}`, 'mcp-log');
+                }
+            } catch (error) {
+                log(`❌ AI request error: ${error.message}`, 'mcp-log');
+            }
+            
+            input.value = '';
+        }
+
+        // Basic function stubs (you can implement these later)
+        function stepCPU() { log('CPU step (function not implemented yet)'); }
+        function runCPU() { log('CPU run (function not implemented yet)'); }
+        function resetCPU() { log('CPU reset (function not implemented yet)'); }
+        function stopCPU() { log('CPU stop (function not implemented yet)'); }
+        function assembleAndLoad() { 
+            const code = document.getElementById('assembly-editor').value;
+            if (code.trim()) {
+                log(`Assembling ${code.length} characters of code...`);
+                log('Assembly & load (function not fully implemented yet)');
+            } else {
+                log('No code to assemble');
+            }
+        }
+        function clearEditor() { 
+            document.getElementById('assembly-editor').value = '';
+            document.getElementById('editor-status').textContent = 'Ready';
+            log('Editor cleared');
+        }
+        function clearVideo() { 
+            const canvas = document.getElementById('video-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, 256, 192);
+            log('Video display cleared');
+        }
+        function clearConsole() { 
+            document.getElementById('console-output').innerHTML = '';
+            log('Terminal cleared');
+        }
+        function clearMCPLog() { 
+            document.getElementById('mcp-log').innerHTML = '';
+        }
+        function clearSystemLog() { 
+            document.getElementById('system-log').innerHTML = '';
+        }
+
+        // Initialize system
+        async function initializeSystem() {
+            try {
+                updateSystemStatus('cpu-status', 'Ready', 'good');
+                updateSystemStatus('memory-status', 'Ready', 'good');
+                
+                // Test MCP connection
+                log('🔍 Testing MCP server connection...');
+                const response = await fetch('http://localhost:8001/health');
+                if (response.ok) {
+                    updateSystemStatus('mcp-status', 'Connected', 'good');
+                    log('✅ MCP server connected successfully!');
+                } else {
+                    updateSystemStatus('mcp-status', 'Offline', 'error');
+                    log('⚠ MCP server offline - AI features will not work');
+                }
+                
+                // Initialize video canvas
+                const canvas = document.getElementById('video-canvas');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, 256, 192);
+                
+                log('🎉 Working system initialized successfully!');
+                log('✨ Ready for AI commands! Try: "tell me a joke", "hello", or "draw a red square"');
+                
+            } catch (error) {
+                log(`❌ Initialization error: ${error.message}`);
+                updateSystemStatus('mcp-status', 'Error', 'error');
+            }
+        }
+
+        // Update system time
+        setInterval(() => {
+            const timeEl = document.getElementById('system-time');
+            if (timeEl) timeEl.textContent = new Date().toLocaleTimeString();
+        }, 1000);
+
+        // Initialize on load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeSystem);
+        } else {
+            initializeSystem();
+        }
+    </script>
+</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iMaCoMpUtERussy - 6502 CPU Emulator</title>
     <link rel="stylesheet" href="css/components.css">
     <style>

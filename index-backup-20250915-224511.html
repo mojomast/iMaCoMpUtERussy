@@ -1,0 +1,2204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iMaCoMpUtERussy - 8-bit CPU Emulator</title>
+    <link rel="stylesheet" href="css/retro-theme.css">
+    <link rel="stylesheet" href="css/components.css">
+    <style>
+        /* Enhanced layout for better UX */
+        body { margin: 0; padding: 0; background: #000; color: #00ff00; font-family: 'Courier New', monospace; }
+        
+        #header { 
+            background: linear-gradient(90deg, #001100, #002200); 
+            padding: 10px 20px; 
+            border-bottom: 2px solid #00ff00; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        
+        #header h1 { margin: 0; color: #00ff00; font-size: 24px; }
+        #header .status { display: flex; gap: 20px; align-items: center; }
+        
+        /* Improved layout: much wider side panels, narrower center */
+        #main-container { 
+            display: grid; 
+            grid-template-columns: 480px 1fr 600px; 
+            grid-template-rows: 1fr; 
+            height: calc(100vh - 120px); 
+            gap: 10px; 
+            padding: 10px; 
+        }
+        
+        #left-panel, #right-panel { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; 
+        }
+        
+        /* Center panel: Video on top, Terminal and AI below */
+        #center-panel { 
+            display: grid; 
+            grid-template-rows: 1fr 1fr 1fr; 
+            gap: 10px; 
+        }
+        
+        .panel { 
+            background: rgba(0, 0, 0, 0.9); 
+            border: 1px solid #00ff00; 
+            border-radius: 4px; 
+            overflow: hidden; 
+            display: flex; 
+            flex-direction: column;
+        }
+        
+        .panel-header { 
+            background: rgba(0, 255, 0, 0.1); 
+            padding: 8px 12px; 
+            border-bottom: 1px solid #00ff00; 
+            font-weight: bold; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-content { 
+            flex: 1; 
+            padding: 10px; 
+            overflow: auto; 
+        }
+        
+        .btn { 
+            background: #001100; 
+            border: 1px solid #00ff00; 
+            color: #00ff00; 
+            padding: 6px 12px; 
+            cursor: pointer; 
+            border-radius: 2px;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        
+        .btn:hover { background: #002200; }
+        .btn:active { background: #003300; }
+        .btn.primary { background: #004400; }
+        .btn.danger { border-color: #ff4444; color: #ff4444; }
+        .btn.danger:hover { background: #220000; }
+        
+        .control-group { 
+            display: flex; 
+            gap: 8px; 
+            margin-bottom: 10px; 
+            flex-wrap: wrap;
+        }
+        
+        .status-good { color: #44ff44; }
+        .status-warn { color: #ffaa00; }
+        .status-error { color: #ff4444; }
+        
+        select, input, textarea { 
+            background: #000; 
+            border: 1px solid #00ff00; 
+            color: #00ff00; 
+            padding: 4px; 
+            font-family: inherit;
+            font-size: 12px;
+        }
+        
+        textarea { resize: vertical; }
+        
+        #console-output, #memory-display, #mcp-log { 
+            background: #000; 
+            border: 1px solid #004400; 
+            padding: 8px; 
+            font-family: 'Courier New', monospace; 
+            font-size: 11px; 
+            overflow-y: auto; 
+            height: 120px;
+        }
+        
+        /* Enhanced memory display */
+        #memory-display { 
+            height: 100%; 
+            font-size: 10px;
+            line-height: 1.2;
+            overflow-x: hidden;
+            overflow-y: auto;
+            word-wrap: break-word;
+        }
+        
+        .memory-controls {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+            line-height: 1.2;
+        }
+        
+        .memory-region {
+            background: #001100;
+            border: 1px solid #004400;
+            padding: 3px 8px;
+            font-size: 10px;
+            cursor: pointer;
+            border-radius: 2px;
+            white-space: nowrap;
+            user-select: none;
+        }
+        
+        .memory-region.active {
+            background: #004400;
+            border-color: #00aa00;
+            color: #fff;
+        }
+        
+        .memory-region:hover {
+            background: #002200;
+            border-color: #006600;
+        }
+        
+        .memory-section {
+            margin-bottom: 8px;
+            border-bottom: 1px solid #004400;
+            padding-bottom: 4px;
+        }
+        
+        .memory-section-title {
+            color: #ffaa00;
+            font-weight: bold;
+            font-size: 11px;
+            margin-bottom: 3px;
+        }
+        
+        #video-canvas { 
+            border: 1px solid #00ff00; 
+            background: #000; 
+            display: block; 
+            margin: 0 auto;
+            max-width: 90%;
+            max-height: 140px;
+            width: auto;
+            height: auto;
+        }
+        
+        .register-display { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 8px; 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px;
+        }
+        
+        .register-item { 
+            background: #001100; 
+            border: 1px solid #004400; 
+            padding: 4px 8px; 
+            border-radius: 2px;
+        }
+        
+        #footer { 
+            background: #001100; 
+            border-top: 1px solid #00ff00; 
+            padding: 8px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            font-size: 12px;
+        }
+        
+        .load-error { color: #ff4444; font-size: 12px; margin-top: 5px; }
+        .load-success { color: #44ff44; font-size: 12px; margin-top: 5px; }
+        
+        /* Terminal styling */
+        #terminal-panel .panel-content { padding: 5px; }
+        #console-output { 
+            height: 120px;
+            max-height: 120px;
+            min-height: 80px; 
+            background: #000; 
+            border: 1px solid #00ff00; 
+            padding: 5px; 
+            margin-bottom: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            overflow-y: auto;
+            overflow-x: hidden;
+            color: #00ff00;
+        }
+        
+        @media (max-width: 1800px) {
+            #main-container { 
+                grid-template-columns: 440px 1fr 560px; 
+            }
+        }
+        
+        @media (max-width: 1600px) {
+            #main-container { 
+                grid-template-columns: 400px 1fr 520px; 
+            }
+        }
+        
+        @media (max-width: 1400px) {
+            #main-container { 
+                grid-template-columns: 380px 1fr 480px; 
+            }
+        }
+        
+        @media (max-width: 1200px) {
+            #main-container { 
+                grid-template-columns: 1fr; 
+                grid-template-rows: auto auto auto; 
+                height: auto;
+            }
+            #left-panel, #right-panel { 
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+                grid-template-rows: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div id="header">
+        <h1>🎮 iMaCoMpUtERussy</h1>
+        <div class="status">
+            <div>MCP: <span id="mcp-status" class="status-warn">Connecting...</span></div>
+            <div>CPU: <span id="cpu-status" class="status-warn">Initializing...</span></div>
+            <div>Memory: <span id="memory-status" class="status-warn">Loading...</span></div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div id="main-container">
+        <!-- Left Panel: Controls & Assembly -->
+        <div id="left-panel">
+            <!-- CPU Controls -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>🔧 CPU Controls</span>
+                </div>
+                <div class="panel-content">
+                    <div class="control-group">
+                        <button class="btn primary" onclick="stepCPU()">Step</button>
+                        <button class="btn" onclick="runCPU()">Run</button>
+                        <button class="btn danger" onclick="resetCPU()">Reset</button>
+                        <button class="btn" onclick="stopCPU()">Stop</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Speed:</label>
+                        <select id="cpu-speed">
+                            <option value="1">1 Hz</option>
+                            <option value="10">10 Hz</option>
+                            <option value="100" selected>100 Hz</option>
+                            <option value="1000">1 kHz</option>
+                        </select>
+                    </div>
+                    
+                    <div id="cpu-registers" class="register-display">
+                        <div class="register-item">PC: <span id="reg-pc">0000</span></div>
+                        <div class="register-item">A: <span id="reg-a">00</span></div>
+                        <div class="register-item">X: <span id="reg-x">00</span></div>
+                        <div class="register-item">Y: <span id="reg-y">00</span></div>
+                        <div class="register-item">SP: <span id="reg-sp">FF</span></div>
+                        <div class="register-item">Status: <span id="reg-status">00</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Program Manager -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>📁 Program Manager</span>
+                </div>
+                <div class="panel-content">
+                    <div class="control-group">
+                        <select id="sample-programs" style="flex: 1;">
+                            <option value="">Select a sample...</option>
+                            <option value="hello-world.asm">Hello World</option>
+                            <option value="fibonacci.asm">Fibonacci</option>
+                            <option value="graphics-demo.asm">Graphics Demo</option>
+                            <option value="hello-terminal.asm">Terminal Demo</option>
+                            <option value="video-demo.asm">Video Demo</option>
+                            <option value="test-simple.asm">Simple Test</option>
+                            <option value="echo.asm">Echo Program</option>
+                        </select>
+                        <button class="btn" onclick="loadSample()">Load</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <button class="btn primary" onclick="assembleAndLoad()">Assemble & Load</button>
+                        <button class="btn" onclick="saveProgram()">Save</button>
+                        <button class="btn" onclick="clearEditor()">Clear</button>
+                        <button class="btn" onclick="loadHiKyleProgram()" style="background: #004400;">HI KYLE Test</button>
+                    </div>
+                    
+                    <div id="load-status"></div>
+                </div>
+            </div>
+
+            <!-- Assembly Editor -->
+            <div class="panel" style="flex: 1;">
+                <div class="panel-header">
+                    <span>✏️ Assembly Editor</span>
+                    <span id="editor-status">Ready</span>
+                </div>
+                <div class="panel-content">
+                    <textarea id="assembly-editor" placeholder="Enter assembly code here..." style="width: 100%; height: 100%; min-height: 200px; resize: none; font-size: 11px; line-height: 1.4;"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Panel: Video, Terminal & AI -->
+        <div id="center-panel">
+            <!-- Video Display -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>📺 Video Display</span>
+                    <span>256x192</span>
+                </div>
+                <div class="panel-content" style="text-align: center; padding: 10px;">
+                    <canvas id="video-canvas" width="256" height="192"></canvas>
+                    <div style="margin-top: 8px;">
+                        <button class="btn" onclick="clearVideo()">Clear</button>
+                        <button class="btn" onclick="toggleVideoGrid()">Grid</button>
+                        <button class="btn" onclick="saveVideoFrame()">Save Frame</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal I/O -->
+            <div class="panel" id="terminal-panel">
+                <div class="panel-header">
+                    <span>💻 Terminal I/O</span>
+                    <button class="btn" onclick="clearConsole()">Clear</button>
+                </div>
+                <div class="panel-content">
+                    <div id="console-output"></div>
+                    <div style="display: flex; align-items: center;">
+                        <span style="color: #00ff00; margin-right: 5px;">></span>
+                        <input type="text" id="console-input" placeholder="Terminal input (only active when CPU is running)..." style="flex: 1; background: transparent; border: none; color: #00ff00; font-family: 'Courier New', monospace; font-size: 12px; outline: none;" onkeydown="handleConsoleInput(event)">
+                    </div>
+                </div>
+            </div>
+
+            <!-- MCP Natural Language -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>🤖 AI Assistant</span>
+                </div>
+                <div class="panel-content">
+                    <textarea id="mcp-input" placeholder="Ask me to do something... (e.g., 'load hello world program', 'step the CPU 5 times', 'show memory at 0x0600')" rows="2" style="width: 100%;"></textarea>
+                    <div class="control-group" style="margin-top: 8px;">
+                        <button class="btn primary" onclick="sendMCPCommand()">Send</button>
+                        <button class="btn" onclick="clearMCPLog()">Clear Log</button>
+                    </div>
+                    <div id="mcp-log" style="height: 80px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Memory & System -->
+        <div id="right-panel">
+            <!-- Memory Viewer -->
+            <div class="panel" style="flex: 2;">
+                <div class="panel-header">
+                    <span>💾 Memory Viewer</span>
+                    <div>
+                        <input type="text" id="memory-address" value="0000" style="width: 60px;">
+                        <button class="btn" onclick="gotoMemoryAddress()">Go</button>
+                        <button class="btn" onclick="updateMemoryDisplay()">Refresh</button>
+                    </div>
+                </div>
+                <div class="panel-content">
+                    <div class="memory-controls">
+                        <span style="font-size: 10px; color: #ffaa00;">Regions:</span>
+                        <div class="memory-region active" onclick="toggleMemoryRegion('zero-page', 0x0000)">Zero Page</div>
+                        <div class="memory-region active" onclick="toggleMemoryRegion('stack', 0x0100)">Stack</div>
+                        <div class="memory-region" onclick="toggleMemoryRegion('io', 0x0200)">I/O</div>
+                        <div class="memory-region active" onclick="toggleMemoryRegion('program', 0x0600)">Program</div>
+                        <div class="memory-region" onclick="toggleMemoryRegion('video', 0x4000)">Video</div>
+                        <div class="memory-region" onclick="toggleMemoryRegion('high', 0xF000)">High</div>
+                    </div>
+                    <div id="memory-display"></div>
+                </div>
+            </div>
+
+            <!-- System Logs -->
+            <div class="panel" style="min-height: 200px; max-height: 250px; flex-shrink: 0;">
+                <div class="panel-header">
+                    <span>📋 System Logs</span>
+                    <button class="btn" onclick="clearSystemLog()">Clear</button>
+                </div>
+                <div class="panel-content">
+                    <div id="system-log" style="height: 200px; max-height: 200px; min-height: 150px; overflow-y: auto; overflow-x: hidden; background: #000; border: 1px solid #004400; padding: 8px; font-size: 11px; word-wrap: break-word; white-space: pre-wrap; line-height: 1.2;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div id="footer">
+        <div>iMaCoMpUtERussy v2.1.0 - Autonomous 8-bit CPU Emulator</div>
+        <div>
+            <span id="system-time"></span> | 
+            <span id="cpu-cycles">Cycles: 0</span> |
+            <span id="memory-usage">Memory: 0/64KB</span>
+        </div>
+    </div>
+
+    <script type="module">
+        // Global state
+        let cpu, memory, assembler;
+        let isRunning = false;
+        let runInterval = null;
+        let cpuCycles = 0;
+        let videoContext, videoCanvas;
+        let currentMemoryAddress = 0;
+        let showGrid = false;
+        let activeMemoryRegions = new Set(['zero-page', 'stack', 'program']); // Default active regions
+        
+        // Initialize CPU running state for terminal input control
+        window.cpuRunning = false;
+        
+        // Initialize terminal I/O system
+        window.terminalInputBuffer = [];
+        window.inputAvailable = false;
+        
+        // Initialize WebSocket connection
+        window.mcpWebSocket = null;
+        window.wsReconnectAttempts = 0;
+        window.wsMaxReconnectAttempts = 5;
+
+        // Module imports will be done dynamically with cache-busting in initializeSystem()
+
+        // Initialize system
+        async function initializeSystem() {
+            try {
+                updateSystemStatus('mcp-status', 'Connecting...', 'warn');
+                updateSystemStatus('cpu-status', 'Loading...', 'warn');
+                updateSystemStatus('memory-status', 'Loading...', 'warn');
+
+                // Test MCP connection
+                try {
+                    const response = await fetch('http://localhost:8001/health');
+                    if (response.ok) {
+                        updateSystemStatus('mcp-status', 'Connected', 'good');
+                        log('✓ MCP server connected');
+                        
+                        // Initialize WebSocket connection
+                        initializeWebSocket();
+                    } else {
+                        throw new Error('Server not responding');
+                    }
+                } catch (error) {
+                    updateSystemStatus('mcp-status', 'Offline', 'error');
+                    log('⚠ MCP server offline - using local simulation');
+                }
+
+                // Load modules with enhanced debugging
+                log('📁 Loading CPU and Memory modules...');
+                const timestamp = Date.now();
+                const [cpuModule, memoryModule] = await Promise.all([
+                    import('./js/cpu.js?' + timestamp),
+                    import('./js/memory.js?' + timestamp)
+                ]);
+
+                // Load assembler separately with detailed logging
+                log('📁 Loading assembler module...');
+                const assemblerModule = await import('./js/assembler.js?' + timestamp);
+                
+                log(`📋 Assembler module loaded successfully`);
+                log(`📋 Available exports: ${Object.keys(assemblerModule).join(', ')}`);
+                log(`📋 Has assemble function: ${typeof assemblerModule.assemble === 'function'}`);
+                log(`📋 Has default export: ${!!assemblerModule.default}`);
+                
+                if (assemblerModule.default) {
+                    log(`📋 Default export keys: ${Object.keys(assemblerModule.default).join(', ')}`);
+                }
+
+                // Initialize components
+                memory = new memoryModule.iMaCoMpUtERussyMemory();
+                cpu = new cpuModule.iMaCoMpUtERussyCPU({ memory });
+
+                // Initialize video display system
+                videoCanvas = document.getElementById('video-canvas');
+                videoContext = videoCanvas.getContext('2d');
+                
+                // Import and initialize VideoDisplay class
+                try {
+                    const { VideoDisplay } = await import('./js/ui/video-display.js?' + timestamp);
+                    window.videoDisplay = new VideoDisplay(videoCanvas, memory, 32, 24);
+                    log('✓ Video display system initialized');
+                } catch (error) {
+                    log(`⚠ Video display fallback: ${error.message}`);
+                    // Fallback: basic video context
+                    videoContext.fillStyle = '#000';
+                    videoContext.fillRect(0, 0, 256, 192);
+                    
+                    // Create minimal updateDisplay function for CPU compatibility
+                    window.videoDisplay = {
+                        updateDisplay: () => {
+                            log('Video update called (fallback mode)');
+                            // Simple fallback: just clear to green if there's data in video buffer
+                            const hasData = memory.readByte(0x0200) !== 0;
+                            videoContext.fillStyle = hasData ? '#004400' : '#000000';
+                            videoContext.fillRect(0, 0, 256, 192);
+                        }
+                    };
+                }
+                
+                // Use the assemble function from the module
+                if (assemblerModule && typeof assemblerModule.assemble === 'function') {
+                    assembler = assemblerModule;
+                    log('✅ Real assembler loaded successfully');
+                    
+                    // Test the assembler with a simple program
+                    try {
+                        const testResult = assembler.assemble('LDA #10\nHLT', {});
+                        log(`✅ Assembler test successful: ${testResult.bytes.length} bytes generated`);
+                        log(`✅ Test bytes: [${testResult.bytes.join(', ')}]`);
+                    } catch (testError) {
+                        log(`❌ Assembler test failed: ${testError.message}`);
+                    }
+                    
+                } else if (assemblerModule && assemblerModule.default && typeof assemblerModule.default.assemble === 'function') {
+                    assembler = assemblerModule.default;
+                    log('✅ Default assembler loaded successfully');
+                } else {
+                    // Fallback simple assembler
+                    const fallbackAssembler = {
+                        assemble: function(code) {
+                            log('⚠ Using fallback assembler - real assembler failed to load');
+                            
+                            // Simple regex-based assembler for basic instructions
+                            const lines = code.split('\n');
+                            const bytes = [];
+                            let startAddress = 0x0600;
+                            
+                            for (const line of lines) {
+                                const cleanLine = line.trim().replace(/;.*$/, ''); // Remove comments
+                                if (!cleanLine) continue;
+                                
+                                if (cleanLine.startsWith('.org')) {
+                                    const match = cleanLine.match(/\.org\s+(?:0x|$)?([0-9a-fA-F]+)/i);
+                                    if (match) {
+                                        startAddress = parseInt(match[1], 16);
+                                    }
+                                    continue;
+                                }
+                                
+                                // Basic instruction parsing
+                                if (cleanLine.match(/^LDA\s+#(\d+)/i)) {
+                                    const match = cleanLine.match(/^LDA\s+#(\d+)/i);
+                                    bytes.push(0xA9, parseInt(match[1]));
+                                    log(`  LDA #${match[1]} -> [A9, ${parseInt(match[1]).toString(16).padStart(2, '0').toUpperCase()}]`);
+                                } else if (cleanLine.match(/^STA\s+\$([0-9a-fA-F]+)/i)) {
+                                    const match = cleanLine.match(/^STA\s+\$([0-9a-fA-F]+)/i);
+                                    const addr = parseInt(match[1], 16);
+                                    if (addr < 256) {
+                                        bytes.push(0x85, addr); // Zero page
+                                        log(`  STA $${match[1]} -> [85, ${addr.toString(16).padStart(2, '0').toUpperCase()}] (zero page)`);
+                                    } else {
+                                        bytes.push(0x8D, addr & 0xFF, (addr >> 8) & 0xFF); // Absolute
+                                        log(`  STA $${match[1]} -> [8D, ${(addr & 0xFF).toString(16).padStart(2, '0').toUpperCase()}, ${((addr >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase()}] (absolute)`);
+                                    }
+                                } else if (cleanLine.match(/^HLT/i)) {
+                                    bytes.push(0x3A); // Halt instruction
+                                    log(`  HLT -> [3A]`);
+                                } else if (cleanLine.match(/^NOP/i)) {
+                                    bytes.push(0xEA); // NOP instruction
+                                    log(`  NOP -> [EA]`);
+                                } else if (cleanLine.trim()) {
+                                    log(`  ⚠ Unknown instruction: ${cleanLine}`);
+                                }
+                            }
+                            
+                            return {
+                                bytes: bytes,
+                                startAddress: startAddress,
+                                errors: []
+                            };
+                        }
+                    };
+                    assembler = fallbackAssembler;
+                    window.fallbackAssembler = fallbackAssembler;
+                    log('⚠ Using enhanced fallback assembler');
+                }
+
+                updateSystemStatus('cpu-status', 'Ready', 'good');
+                updateSystemStatus('memory-status', 'Ready', 'good');
+
+                // Set up I/O mapping 
+                setupIOHandling();
+
+                // Initial display updates
+                updateCPUDisplay();
+                updateMemoryDisplay();
+
+                log('🎉 System initialized successfully!');
+                
+                // System ready - no auto-loading programs
+                log('✨ Ready for user commands!');
+
+            } catch (error) {
+                log(`❌ Initialization failed: ${error.message}`);
+                updateSystemStatus('cpu-status', 'Error', 'error');
+                updateSystemStatus('memory-status', 'Error', 'error');
+                console.error('Initialization error:', error);
+            }
+        }
+
+        function updateSystemStatus(elementId, text, type) {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer update until DOM is ready
+                document.addEventListener('DOMContentLoaded', () => {
+                    updateSystemStatus(elementId, text, type);
+                });
+                return;
+            }
+
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+                element.className = `status-${type}`;
+            }
+        }
+
+        function log(message, target = 'system-log') {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer logging until DOM is ready, but still log to console
+                document.addEventListener('DOMContentLoaded', () => {
+                    log(message, target);
+                });
+            }
+
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById(target);
+            if (logElement) {
+                // Prevent excessive logging of the same message
+                const lastMessage = logElement.lastElementChild?.textContent;
+                if (lastMessage && lastMessage.includes(message)) {
+                    return; // Skip duplicate messages
+                }
+
+                // Limit log length to prevent memory issues
+                const maxLogEntries = 100;
+                const logEntries = logElement.children;
+                if (logEntries.length >= maxLogEntries) {
+                    // Remove oldest entries
+                    for (let i = 0; i < 10; i++) {
+                        if (logEntries[0]) logEntries[0].remove();
+                    }
+                }
+
+                const logEntry = document.createElement('div');
+                logEntry.style.color = '#00ff00';
+                logEntry.style.marginBottom = '2px';
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                logElement.appendChild(logEntry);
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+            console.log(message);
+        }
+
+        function setupIOHandling() {
+            // Set up proper I/O handling for terminal interaction
+            log('Setting up I/O handling for terminal interaction');
+            
+            // Initialize I/O buffers and status
+            window.terminalOutputBuffer = [];
+            window.terminalInputBuffer = [];
+            window.inputAvailable = false;
+            
+            // Set up memory-mapped I/O registers
+            // $F0 = Input register (read character)
+            // $F1 = Output register (write character) 
+            // $F2 = Status register (bit 0 = input ready)
+            
+            // Hook into memory reads to handle input register
+            if (memory && memory.readByte) {
+                const originalReadByte = memory.readByte.bind(memory);
+                memory.readByte = function(address) {
+                    if (address === 0x00F0) {
+                        // Input register - return next character from buffer
+                        if (window.terminalInputBuffer.length > 0) {
+                            const char = window.terminalInputBuffer.shift();
+                            // Always update the status register after reading a character
+                            const newStatus = window.terminalInputBuffer.length > 0 ? 0x01 : 0x00;
+                            window.inputAvailable = window.terminalInputBuffer.length > 0;
+                            
+                            // Directly update the memory location without triggering the write hook
+                            originalReadByte.call(this, 0x00F2); // Read current value first
+                            if (memory.memory && memory.memory[0x00F2] !== undefined) {
+                                memory.memory[0x00F2] = newStatus;
+                            }
+                            
+                            // Log all character reads for debugging
+                            if (char === 13) {
+                                log(`📥 CPU read: Enter key (${char}) - buffer now has ${window.terminalInputBuffer.length} chars, status=${newStatus}`);
+                            } else if (char >= 32 && char <= 126) {
+                                log(`📥 CPU read: '${String.fromCharCode(char)}' (${char}) - buffer now has ${window.terminalInputBuffer.length} chars, status=${newStatus}`);
+                            } else {
+                                log(`📥 CPU read: special char ${char} - buffer now has ${window.terminalInputBuffer.length} chars, status=${newStatus}`);
+                            }
+                            return char;
+                        }
+                        log(`📥 CPU read from empty input buffer`);
+                        return 0; // No input available
+                    } else if (address === 0x00F2) {
+                        // Status register - return input availability  
+                        const status = window.terminalInputBuffer.length > 0 ? 0x01 : 0x00;
+                        log(`📥 CPU read status register: ${status} (buffer length: ${window.terminalInputBuffer.length})`);
+                        return status;
+                    }
+                    return originalReadByte(address);
+                };
+            } else {
+                log('❌ Warning: memory.readByte not available for input hook');
+            }
+
+            // Hook into memory writes to catch terminal output
+            if (memory && memory.writeByte) {
+                const originalWriteByte = memory.writeByte.bind(memory);
+                memory.writeByte = function(address, value) {
+                    // Call original write first
+                    originalWriteByte(address, value);
+                    
+                    // Check for terminal output at multiple I/O addresses
+                    if (address === 0x00F1 || address === 0xF001) {
+                        log(`📺 Debug: Terminal write to 0x${address.toString(16).toUpperCase()}: ${value} (${value >= 32 && value <= 126 ? String.fromCharCode(value) : 'special'})`);
+                        handleTerminalOutput(value);
+                    }
+                    
+                    // Check for video memory writes (0x0200-0x05FF or 0x4000-0x4FFF)
+                    if ((address >= 0x0200 && address <= 0x05FF) || (address >= 0x4000 && address <= 0x4FFF)) {
+                        log(`📺 Debug: Video memory write to 0x${address.toString(16).toUpperCase()}: ${value}`);
+                        // Update video display when video memory is written to
+                        if (window.videoDisplay && window.videoDisplay.updateDisplay) {
+                            // Debounce video updates to avoid too many redraws
+                            clearTimeout(window.videoUpdateTimer);
+                            window.videoUpdateTimer = setTimeout(() => {
+                                window.videoDisplay.updateDisplay();
+                                log(`📺 Video display updated after memory write`);
+                            }, 10);
+                        }
+                    }
+                };
+            } else {
+                log('❌ Warning: memory.writeByte not available for terminal output hook');
+            }
+        }
+
+        function handleTerminalOutput(value) {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer output until DOM is ready
+                document.addEventListener('DOMContentLoaded', () => {
+                    handleTerminalOutput(value);
+                });
+                return;
+            }
+
+            const output = document.getElementById('console-output');
+            log(`📺 handleTerminalOutput called: value=${value}, output element exists=${!!output}`);
+
+            if (output && value > 0) {
+                if (value === 10 || value === 13) { // Newline
+                    output.innerHTML += '<br>';
+                    log(`📺 Added newline to terminal`);
+                } else if (value >= 32 && value <= 126) { // Printable ASCII
+                    const char = String.fromCharCode(value);
+                    output.innerHTML += char;
+                    log(`📺 Added character '${char}' to terminal`);
+                } else {
+                    output.innerHTML += `<span style="color: #888;">[${value.toString(16).padStart(2, '0')}]</span>`;
+                    log(`📺 Added special character [${value.toString(16).padStart(2, '0')}] to terminal`);
+                }
+                output.scrollTop = output.scrollHeight;
+            } else {
+                log(`📺 handleTerminalOutput failed: output=${!!output}, value=${value}`);
+            }
+        }
+
+        window.handleConsoleInput = function(event) {
+            const input = event.target;
+            const output = document.getElementById('console-output');
+            
+            // Only process if CPU is running
+            if (!window.cpuRunning) {
+                if (event.key === 'Enter') {
+                    output.innerHTML += `<span style="color: #666;">// CPU not running. Load and run a program first.</span><br>`;
+                    input.value = '';
+                    output.scrollTop = output.scrollHeight;
+                }
+                return;
+            }
+            
+            // Handle Enter key
+            if (event.key === 'Enter') {
+                // Don't echo the prompt line - let the program handle all output
+                // Just add the input text without the ">" prompt since the echo program will handle echoing
+                
+                // Add each character to the input buffer
+                for (let i = 0; i < input.value.length; i++) {
+                    const charCode = input.value.charCodeAt(i);
+                    window.terminalInputBuffer.push(charCode);
+                }
+                
+                // Add carriage return
+                window.terminalInputBuffer.push(13); // CR
+                
+                // Set input available flag and update status register
+                if (window.terminalInputBuffer.length > 0) {
+                    window.inputAvailable = true;
+                    if (memory && memory.writeByte) {
+                        memory.writeByte(0x00F2, 0x01); // Set input ready flag
+                    }
+                    log(`📥 Terminal input queued: "${input.value}" (${window.terminalInputBuffer.length} chars total)`);
+                }
+                
+                input.value = '';
+                output.scrollTop = output.scrollHeight;
+                
+                // Prevent default form submission
+                event.preventDefault();
+                return false;
+            }
+        };
+
+        function updateVideoPixel(offset, value) {
+            const x = offset % 256;
+            const y = Math.floor(offset / 256);
+            if (x < 256 && y < 192) {
+                const color = value > 0 ? '#00ff00' : '#000000';
+                videoContext.fillStyle = color;
+                videoContext.fillRect(x, y, 1, 1);
+            }
+        }
+
+        function updateCPUDisplay() {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer update until DOM is ready
+                document.addEventListener('DOMContentLoaded', updateCPUDisplay);
+                return;
+            }
+
+            if (cpu) {
+                try {
+                    // Try different ways to access CPU registers
+                    let pc, a, x, y, sp, status;
+
+                    if (cpu.registers) {
+                        // Method 1: cpu.registers object
+                        const regs = cpu.registers;
+                        pc = regs.PC || regs.pc || 0;
+                        a = regs.A || regs.a || 0;
+                        x = regs.X || regs.x || 0;
+                        y = regs.Y || regs.y || 0;
+                        sp = regs.SP || regs.sp || 255;
+                        status = regs.status || regs.P || regs.p || 0;
+                    } else {
+                        // Method 2: Direct properties
+                        pc = cpu.PC || cpu.pc || 0;
+                        a = cpu.A || cpu.a || 0;
+                        x = cpu.X || cpu.x || 0;
+                        y = cpu.Y || cpu.y || 0;
+                        sp = cpu.SP || cpu.sp || 255;
+                        status = cpu.status || cpu.P || cpu.p || 0;
+                    }
+
+                    // Update display with null checks
+                    const pcEl = document.getElementById('reg-pc');
+                    const aEl = document.getElementById('reg-a');
+                    const xEl = document.getElementById('reg-x');
+                    const yEl = document.getElementById('reg-y');
+                    const spEl = document.getElementById('reg-sp');
+                    const statusEl = document.getElementById('reg-status');
+                    const cyclesEl = document.getElementById('cpu-cycles');
+
+                    if (pcEl) pcEl.textContent = pc.toString(16).padStart(4, '0').toUpperCase();
+                    if (aEl) aEl.textContent = a.toString(16).padStart(2, '0').toUpperCase();
+                    if (xEl) xEl.textContent = x.toString(16).padStart(2, '0').toUpperCase();
+                    if (yEl) yEl.textContent = y.toString(16).padStart(2, '0').toUpperCase();
+                    if (spEl) spEl.textContent = sp.toString(16).padStart(2, '0').toUpperCase();
+                    if (statusEl) statusEl.textContent = status.toString(16).padStart(2, '0').toUpperCase();
+                    if (cyclesEl) cyclesEl.textContent = `Cycles: ${cpuCycles}`;
+                } catch (error) {
+                    // Only log occasionally to avoid spam
+                    if (cpuCycles % 100 === 0) {
+                        console.warn('CPU register access error:', error.message);
+                    }
+                }
+            }
+        }
+
+        function updateMemoryDisplay() {
+            // Add DOM ready check
+            if (document.readyState === 'loading') {
+                // Defer update until DOM is ready
+                document.addEventListener('DOMContentLoaded', updateMemoryDisplay);
+                return;
+            }
+
+            if (!memory || !memory.readByte) return;
+
+            const display = document.getElementById('memory-display');
+            if (!display) return;
+            
+            // Memory region definitions
+            const regions = [
+                { name: 'zero-page', start: 0x0000, size: 256, title: 'Zero Page (0x0000-0x00FF)' },
+                { name: 'stack', start: 0x0100, size: 256, title: 'Stack (0x0100-0x01FF)' },
+                { name: 'io', start: 0x0200, size: 256, title: 'I/O Ports (0x0200-0x02FF)' },
+                { name: 'program', start: 0x0600, size: 512, title: 'Program Area (0x0600-0x07FF)' },
+                { name: 'video', start: 0x4000, size: 256, title: 'Video Memory (0x4000-0x40FF)' },
+                { name: 'high', start: 0xF000, size: 256, title: 'High Memory (0xF000-0xF0FF)' }
+            ];
+            
+            let html = '';
+            let pcAddr = 0;
+            
+            // Get PC address safely
+            try {
+                if (cpu && cpu.registers) {
+                    pcAddr = cpu.registers.PC || cpu.registers.pc || 0;
+                } else if (cpu) {
+                    pcAddr = cpu.PC || cpu.pc || 0;
+                }
+            } catch (error) {
+                // Silently handle PC access errors
+                pcAddr = 0;
+            }
+            
+            // Render ALL active regions completely
+            for (const region of regions) {
+                if (!activeMemoryRegions.has(region.name)) continue;
+                
+                html += `<div class="memory-section">`;
+                html += `<div class="memory-section-title">${region.title}</div>`;
+                
+                // Show ALL rows for active regions - make it wider to prevent scrolling
+                for (let row = 0; row < Math.ceil(region.size / 16); row++) {
+                    const addr = region.start + (row * 16);
+                    if (addr >= region.start + region.size) break;
+                    
+                    html += `<div style="display: flex; gap: 1px; margin-bottom: 1px; font-size: 9px; line-height: 1.1; white-space: nowrap;">`;
+                    html += `<span style="color: #ffaa00; width: 38px; flex-shrink: 0;">${addr.toString(16).padStart(4, '0').toUpperCase()}:</span>`;
+                    
+                    // Hex bytes - make them a bit wider
+                    let hexHtml = '';
+                    for (let col = 0; col < 16; col++) {
+                        if (addr + col < region.start + region.size) {
+                            const byteAddr = addr + col;
+                            const value = memory.readByte(byteAddr);
+                            const isPC = pcAddr === byteAddr;
+                            const bg = isPC ? '#004400' : 'transparent';
+                            const color = value === 0 ? '#444444' : '#00ff00';
+                            hexHtml += `<span style="width: 18px; text-align: center; background: ${bg}; color: ${color}; display: inline-block; margin-right: 1px;">${value.toString(16).padStart(2, '0').toUpperCase()}</span>`;
+                        } else {
+                            hexHtml += `<span style="width: 18px; display: inline-block; margin-right: 1px;"></span>`;
+                        }
+                    }
+                    html += hexHtml;
+                    
+                    // ASCII representation
+                    html += `<span style="color: #666666; margin-left: 8px; font-size: 8px; width: 80px; flex-shrink: 0;">`;
+                    for (let col = 0; col < 16; col++) {
+                        if (addr + col < region.start + region.size) {
+                            const value = memory.readByte(addr + col);
+                            const char = (value >= 32 && value <= 126) ? String.fromCharCode(value) : '.';
+                            html += char;
+                        }
+                    }
+                    html += `</span></div>`;
+                }
+                
+                html += `</div>`;
+            }
+            
+            if (html === '') {
+                html = '<div style="color: #666666; text-align: center; padding: 20px;">No memory regions selected</div>';
+            }
+            
+            display.innerHTML = html;
+        }
+
+        // CPU Control Functions
+        window.stepCPU = function() {
+            if (cpu && cpu.step) {
+                try {
+                    cpu.step();
+                    cpuCycles++;
+                    updateCPUDisplay();
+                    updateMemoryDisplay();
+                    log('CPU stepped');
+                } catch (error) {
+                    log(`CPU step error: ${error.message}`);
+                }
+            } else {
+                log('❌ CPU not ready or step method missing');
+            }
+        };
+
+        window.runCPU = function() {
+            if (isRunning) return;
+            
+            isRunning = true;
+            window.cpuRunning = true; // Set global flag for terminal input
+            const speed = parseInt(document.getElementById('cpu-speed').value);
+            const delay = 1000 / speed;
+            
+            runInterval = setInterval(() => {
+                try {
+                    if (cpu && cpu.step) {
+                        cpu.step();
+                        cpuCycles++;
+                        
+                        // Update displays more frequently so you can see what's happening
+                        if (cpuCycles % 5 === 0) {
+                            updateCPUDisplay();
+                            updateMemoryDisplay();
+                        }
+                    }
+                } catch (error) {
+                    log(`CPU run error: ${error.message}`);
+                    stopCPU();
+                }
+            }, delay);
+            
+            log(`CPU running at ${speed} Hz`);
+        };
+
+        window.stopCPU = function() {
+            if (runInterval) {
+                clearInterval(runInterval);
+                runInterval = null;
+            }
+            isRunning = false;
+            window.cpuRunning = false; // Clear global flag for terminal input
+            updateCPUDisplay();
+            updateMemoryDisplay();
+            log('CPU stopped');
+        };
+
+        window.resetCPU = function() {
+            stopCPU();
+            try {
+                // Reset CPU registers
+                if (cpu) {
+                    if (cpu.reset) {
+                        cpu.reset();
+                    } else {
+                        // Manual reset if no reset method
+                        if (cpu.registers) {
+                            cpu.registers.PC = 0x0600; // Default program start
+                            cpu.registers.A = 0;
+                            cpu.registers.X = 0;
+                            cpu.registers.Y = 0;
+                            cpu.registers.SP = 0xFF;
+                            cpu.registers.status = 0;
+                        } else {
+                            cpu.PC = 0x0600;
+                            cpu.A = 0;
+                            cpu.X = 0;
+                            cpu.Y = 0;
+                            cpu.SP = 0xFF;
+                            cpu.status = 0;
+                        }
+                    }
+                }
+                cpuCycles = 0;
+                updateCPUDisplay();
+                updateMemoryDisplay();
+                log('CPU reset to initial state');
+            } catch (error) {
+                log(`CPU reset error: ${error.message}`);
+            }
+        };
+
+        // Program Management
+        window.loadSample = async function() {
+            const select = document.getElementById('sample-programs');
+            const filename = select.value;
+            if (!filename) return;
+
+            try {
+                const response = await fetch(`/samples/${filename}`);
+                if (!response.ok) throw new Error(`Failed to load ${filename}`);
+                
+                const content = await response.text();
+                document.getElementById('assembly-editor').value = content;
+                document.getElementById('load-status').innerHTML = `<div class="load-success">✓ Loaded ${filename}</div>`;
+                log(`Loaded sample: ${filename}`);
+                
+                // Automatically assemble and load after loading the sample
+                setTimeout(() => {
+                    assembleAndLoad();
+                }, 100);
+                
+            } catch (error) {
+                document.getElementById('load-status').innerHTML = `<div class="load-error">❌ Failed to load ${filename}: ${error.message}</div>`;
+                log(`Failed to load ${filename}: ${error.message}`);
+            }
+        };
+
+        window.assembleAndLoad = function() {
+            const code = document.getElementById('assembly-editor').value.trim();
+            if (!code) {
+                document.getElementById('load-status').innerHTML = `<div class="load-error">❌ No assembly code to assemble</div>`;
+                return;
+            }
+
+            log(`🔧 Assembling code (${code.length} chars): ${code.substring(0, 100)}...`);
+            log(`🔧 Full code to assemble:\n${code}`);
+
+            try {
+                if (!assembler || !assembler.assemble) {
+                    throw new Error('Assembler not available');
+                }
+
+                log(`🔧 Using assembler: ${assembler === window.fallbackAssembler ? 'fallback' : 'real'}`);
+                log(`🔧 Assembler has assemble: ${typeof assembler.assemble === 'function'}`);
+
+                const result = assembler.assemble(code);
+                
+                // Handle different return formats: real assembler returns Uint8Array, fallback returns object
+                let assembledBytes, programStartAddress, assemblyErrors;
+                
+                if (result instanceof Uint8Array) {
+                    // Real assembler returns Uint8Array directly
+                    assembledBytes = Array.from(result);
+                    programStartAddress = 0x0600; // Default start address
+                    assemblyErrors = [];
+                    log(`Assembly result: ${assembledBytes.length} bytes (Uint8Array from real assembler)`);
+                } else if (result && typeof result === 'object') {
+                    // Fallback assembler returns object with bytes, startAddress, errors
+                    assembledBytes = result.bytes || [];
+                    programStartAddress = result.startAddress || 0x0600;
+                    assemblyErrors = result.errors || [];
+                    log(`Assembly result: ${assembledBytes.length} bytes (object from fallback assembler)`);
+                } else {
+                    assembledBytes = [];
+                    programStartAddress = 0x0600;
+                    assemblyErrors = ['Unknown result format'];
+                    log(`Assembly result: Unknown format: ${typeof result}`);
+                }
+                
+                log(`🔧 Start address: 0x${programStartAddress.toString(16).padStart(4, '0')}`);
+                
+                if (assemblyErrors.length > 0) {
+                    const errorMsg = assemblyErrors.join(', ');
+                    document.getElementById('load-status').innerHTML = `<div class="load-error">❌ Assembly errors: ${errorMsg}</div>`;
+                    log(`Assembly errors: ${errorMsg}`);
+                    return;
+                }
+
+                if (!assembledBytes || assembledBytes.length === 0) {
+                    throw new Error('Assembly produced no bytes');
+                }
+
+                // Load assembled code into memory
+                log(`Loading ${assembledBytes.length} bytes to address 0x${programStartAddress.toString(16).toUpperCase()}`);
+                
+                for (let i = 0; i < assembledBytes.length; i++) {
+                    if (memory && memory.writeByte) {
+                        memory.writeByte(programStartAddress + i, assembledBytes[i]);
+                        log(`Memory[0x${(programStartAddress + i).toString(16).toUpperCase()}] = 0x${assembledBytes[i].toString(16).padStart(2, '0').toUpperCase()}`);
+                    }
+                }
+
+                // Set PC to start address
+                if (cpu) {
+                    try {
+                        if (cpu.registers) {
+                            cpu.registers.PC = programStartAddress;
+                        } else {
+                            cpu.PC = programStartAddress;
+                        }
+                        log(`Set Program Counter to 0x${programStartAddress.toString(16).toUpperCase()}`);
+                    } catch (error) {
+                        log(`Warning: Could not set PC - ${error.message}`);
+                    }
+                }
+                
+                updateCPUDisplay();
+                updateMemoryDisplay();
+                
+                document.getElementById('load-status').innerHTML = `<div class="load-success">✓ Assembled and loaded ${assembledBytes.length} bytes at 0x${programStartAddress.toString(16).toUpperCase()}</div>`;
+                log(`Successfully assembled and loaded program at 0x${programStartAddress.toString(16).toUpperCase()}`);
+                log(`📋 First 16 bytes: [${assembledBytes.slice(0, 16).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')}${assembledBytes.length > 16 ? '...' : ''}]`);
+                
+            } catch (error) {
+                document.getElementById('load-status').innerHTML = `<div class="load-error">❌ Assembly failed: ${error.message}</div>`;
+                log(`Assembly failed: ${error.message}`);
+                console.error('Assembly error details:', error);
+            }
+        };
+
+        window.saveProgram = function() {
+            const code = document.getElementById('assembly-editor').value;
+            const blob = new Blob([code], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'program.asm';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            log('Program saved');
+        };
+
+        window.clearEditor = function() {
+            document.getElementById('assembly-editor').value = '';
+            document.getElementById('load-status').innerHTML = '';
+            log('Editor cleared');
+        };
+        
+        window.loadHiKyleProgram = function() {
+            const hiKyleProgram = `; Simple program to output HI KYLE\n.org $0600\n\nstart:\n    LDX #0          ; Initialize index to 0\n\nloop:\n    LDA message,X   ; Load character from message\n    CMP #0          ; Check if it's null terminator\n    BEQ end         ; If zero, we're done\n    STA $F1         ; Write character to terminal\n    INX             ; Increment index\n    JMP loop        ; Continue loop\n\nend:\n    HLT             ; Halt the processor\n\nmessage:\n    .byte "HI KYLE", 10, 0  ; Message with newline and null terminator`;
+            
+            // Clear sample selection and load program
+            document.getElementById('sample-programs').value = '';
+            document.getElementById('assembly-editor').value = hiKyleProgram;
+            document.getElementById('editor-status').textContent = 'Manual Test Program';
+            document.getElementById('load-status').innerHTML = '<div class="load-success">✓ HI KYLE test program loaded</div>';
+            
+            log('HI KYLE test program loaded manually');
+            
+            // Auto-assemble and load
+            setTimeout(() => {
+                assembleAndLoad();
+            }, 100);
+        };
+
+        // Memory Navigation - Optimized
+        window.toggleMemoryRegion = function(regionName, startAddr) {
+            if (activeMemoryRegions.has(regionName)) {
+                activeMemoryRegions.delete(regionName);
+            } else {
+                activeMemoryRegions.add(regionName);
+            }
+            
+            // Update UI efficiently
+            const regionElements = document.querySelectorAll('.memory-region');
+            for (const element of regionElements) {
+                const onclick = element.getAttribute('onclick');
+                if (onclick && onclick.includes(regionName)) {
+                    if (activeMemoryRegions.has(regionName)) {
+                        element.classList.add('active');
+                    } else {
+                        element.classList.remove('active');
+                    }
+                    break;
+                }
+            }
+            
+            // Update memory display
+            updateMemoryDisplay();
+            log(`Memory region '${regionName}' ${activeMemoryRegions.has(regionName) ? 'enabled' : 'disabled'}`);
+        };
+
+        window.gotoMemoryAddress = function() {
+            const addrInput = document.getElementById('memory-address').value;
+            try {
+                const addr = parseInt(addrInput, 16);
+                if (addr >= 0 && addr <= 0xFFFF) {
+                    currentMemoryAddress = addr & 0xFFF0; // Align to 16-byte boundary
+                    
+                    // Temporarily show this address even if region is not active
+                    const tempRegion = {
+                        name: 'custom',
+                        start: currentMemoryAddress,
+                        size: 256,
+                        title: `Custom View (0x${currentMemoryAddress.toString(16).toUpperCase()})`
+                    };
+                    
+                    // Add custom region temporarily
+                    activeMemoryRegions.add('custom');
+                    updateMemoryDisplay();
+                    
+                    log(`Memory view: 0x${currentMemoryAddress.toString(16).toUpperCase()}`);
+                }
+            } catch (error) {
+                log(`Invalid memory address: ${addrInput}`);
+            }
+        };
+
+        // Video Functions
+        window.clearVideo = function() {
+            if (videoContext) {
+                videoContext.fillStyle = '#000';
+                videoContext.fillRect(0, 0, 256, 192);
+                log('Video cleared');
+            }
+        };
+
+        window.toggleVideoGrid = function() {
+            showGrid = !showGrid;
+            if (showGrid) {
+                // Draw grid lines
+                videoContext.strokeStyle = '#004400';
+                videoContext.lineWidth = 1;
+                for (let x = 0; x < 256; x += 16) {
+                    videoContext.beginPath();
+                    videoContext.moveTo(x, 0);
+                    videoContext.lineTo(x, 192);
+                    videoContext.stroke();
+                }
+                for (let y = 0; y < 192; y += 16) {
+                    videoContext.beginPath();
+                    videoContext.moveTo(0, y);
+                    videoContext.lineTo(256, y);
+                    videoContext.stroke();
+                }
+                log('Video grid enabled');
+            } else {
+                // Redraw without grid (this is simplified)
+                videoContext.fillStyle = '#000';
+                videoContext.fillRect(0, 0, 256, 192);
+                log('Video grid disabled');
+            }
+        };
+
+        window.saveVideoFrame = function() {
+            if (videoCanvas) {
+                const link = document.createElement('a');
+                link.download = 'video-frame.png';
+                link.href = videoCanvas.toDataURL();
+                link.click();
+                log('Video frame saved');
+            }
+        };
+
+            // MCP Commands
+        window.sendMCPCommand = async function() {
+            const input = document.getElementById('mcp-input');
+            const command = input.value.trim();
+            if (!command) return;
+
+            // Store the command for later reference in AI response processing
+            input.setAttribute('data-last-command', command);
+            
+            log(`AI Command: ${command}`, 'mcp-log');
+            
+            // Process common commands locally for responsiveness
+            const lowerCommand = command.toLowerCase();
+            
+            if (lowerCommand.includes('step')) {
+                const match = lowerCommand.match(/step.*?(\d+)/);
+                const steps = match ? parseInt(match[1]) : 1;
+                for (let i = 0; i < steps; i++) {
+                    stepCPU();
+                }
+                log(`✓ Stepped CPU ${steps} time(s)`, 'mcp-log');
+            } else if (lowerCommand.includes('reset')) {
+                resetCPU();
+                log('✓ Reset CPU', 'mcp-log');
+            } else if (lowerCommand.includes('run')) {
+                runCPU();
+                log('✓ Started CPU', 'mcp-log');
+            } else if (lowerCommand.includes('stop')) {
+                stopCPU();
+                log('✓ Stopped CPU', 'mcp-log');
+            } else if (lowerCommand.includes('load') && lowerCommand.includes('hello')) {
+                document.getElementById('sample-programs').value = 'hello-world.asm';
+                await loadSample();
+                assembleAndLoad();
+                log('✓ Loaded and assembled Hello World', 'mcp-log');
+            } else if (lowerCommand.includes('clear') && lowerCommand.includes('memory')) {
+                // Extract memory region from command
+                let region = 'program'; // default
+                if (lowerCommand.includes('program')) region = 'program';
+                else if (lowerCommand.includes('video')) region = 'video';
+                else if (lowerCommand.includes('stack')) region = 'stack';
+                else if (lowerCommand.includes('zero')) region = 'zero-page';
+                else if (lowerCommand.includes('all')) region = 'all';
+                
+                // Call the memory clear API
+                try {
+                    const apiKey = 'default-api-key-change-in-production';
+                    const response = await fetch('http://localhost:8001/mcp/memory/clear', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-API-Key': apiKey
+                        },
+                        body: JSON.stringify({
+                            region: region,
+                            value: 0
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.success && result.data) {
+                            log(`✓ Cleared ${result.data.bytesCleared} bytes from ${result.data.region} (${result.data.range})`, 'mcp-log');
+                            updateMemoryDisplay(); // Refresh memory display
+                        } else {
+                            log(`✗ Memory clear failed: ${JSON.stringify(result)}`, 'mcp-log');
+                        }
+                    } else {
+                        const errorText = await response.text();
+                        log(`✗ Memory clear error: ${response.status} - ${errorText}`, 'mcp-log');
+                    }
+                } catch (error) {
+                    log(`✗ Memory clear failed: ${error.message}`, 'mcp-log');
+                }
+            } else if (lowerCommand.includes('memory') || lowerCommand.includes('0x')) {
+                const match = command.match(/0x([0-9a-fA-F]+)/);
+                if (match) {
+                    document.getElementById('memory-address').value = match[1];
+                    gotoMemoryAddress();
+                    log(`✓ Showing memory at 0x${match[1]}`, 'mcp-log');
+                }
+            } else if (lowerCommand.includes('clear') && lowerCommand.includes('video')) {
+                clearVideo();
+                log('✓ Cleared video display', 'mcp-log');
+            } else if (lowerCommand.includes('update') && lowerCommand.includes('video')) {
+                if (window.videoDisplay) {
+                    window.videoDisplay.updateDisplay();
+                    log('✓ Updated video display', 'mcp-log');
+                } else {
+                    log('⚠ Video display not available', 'mcp-log');
+                }
+            } else if (isVideoCommand(lowerCommand)) {
+                // Generate and load a video program  
+                log('🤖 Generating video program...', 'mcp-log');
+                try {
+                    const program = await buildVideoProgram(command);
+                    document.getElementById('sample-programs').value = '';
+                    document.getElementById('assembly-editor').value = program;
+                    document.getElementById('editor-status').textContent = 'AI Generated (Video)';
+                    
+                    // Force assemble and load with longer delay to ensure it completes
+                    setTimeout(() => {
+                        log('🔧 Force assembling video program...', 'mcp-log');
+                        assembleAndLoad();
+                        
+                        // Wait a bit more then verify it loaded
+                        setTimeout(() => {
+                            updateCPUDisplay();
+                            updateMemoryDisplay();
+                            
+                            // Debug: Check PC and memory contents
+                            let pcValue = 'unknown';
+                            try {
+                                if (cpu && cpu.registers) {
+                                    pcValue = '0x' + (cpu.registers.PC || 0).toString(16).padStart(4, '0').toUpperCase();
+                                } else if (cpu) {
+                                    pcValue = '0x' + (cpu.PC || 0).toString(16).padStart(4, '0').toUpperCase();
+                                }
+                            } catch (e) { pcValue = 'error'; }
+                            
+                            log(`🔍 Debug: PC now at ${pcValue}`, 'mcp-log');
+                            log(`🔍 Debug: Memory[0x0600] = 0x${memory.readByte(0x0600).toString(16).padStart(2, '0').toUpperCase()}`, 'mcp-log');
+                            log(`✓ Video program assembled and memory updated!`, 'mcp-log');
+                            
+                            if (lowerCommand.includes('run')) {
+                                setTimeout(() => { runCPU(); }, 300);
+                            }
+                        }, 300);
+                    }, 200);
+                } catch (error) {
+                    log(`❌ Graphics generation failed: ${error.message}`, 'mcp-log');
+                }
+            } else {
+                // Use the new contextual AI system for all other commands
+                log('🤖 Processing with contextual AI...', 'mcp-log');
+                try {
+                    const result = await buildVideoProgram(command);
+                    
+                    if (result === null) {
+                        // Non-graphics command - AI response was already logged
+                        log('✓ AI response completed', 'mcp-log');
+                    } else {
+                        // Graphics command - load the assembly
+                        document.getElementById('sample-programs').value = '';
+                        document.getElementById('assembly-editor').value = result;
+                        document.getElementById('editor-status').textContent = 'AI Generated';
+                        
+                        setTimeout(() => {
+                            assembleAndLoad();
+                            log(`🤖 Program loaded and assembled - ready to run!`, 'mcp-log');
+                            
+                            if (command.toLowerCase().includes('run')) {
+                                setTimeout(() => { runCPU(); }, 500);
+                            }
+                        }, 100);
+                    }
+                } catch (error) {
+                    log(`❌ AI processing failed: ${error.message}`, 'mcp-log');
+                }
+            }
+            
+            input.value = '';
+        };
+
+        // Utility Functions
+        window.clearConsole = function() {
+            document.getElementById('console-output').innerHTML = '';
+            // Also clear input buffer for fresh start
+            window.terminalInputBuffer = [];
+            window.inputAvailable = false;
+            if (memory && memory.writeByte) {
+                memory.writeByte(0x00F2, 0x00); // Clear status register
+            }
+            log('Terminal cleared and input buffer reset');
+        };
+        
+        window.clearMCPLog = function() {
+            document.getElementById('mcp-log').innerHTML = '';
+        };
+        
+        window.clearSystemLog = function() {
+            document.getElementById('system-log').innerHTML = '';
+        };
+        
+        // Initialize WebSocket connection for real-time updates
+        function initializeWebSocket() {
+            if (window.mcpWebSocket && window.mcpWebSocket.readyState === WebSocket.OPEN) {
+                return; // Already connected
+            }
+            
+            try {
+                window.mcpWebSocket = new WebSocket('ws://localhost:8001');
+                
+                window.mcpWebSocket.onopen = function(event) {
+                    log('🔌 WebSocket connected for real-time updates');
+                    window.wsReconnectAttempts = 0; // Reset reconnect counter
+                    updateSystemStatus('mcp-status', 'Connected (Live)', 'good');
+                };
+                
+                window.mcpWebSocket.onmessage = function(event) {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleWebSocketMessage(message);
+                    } catch (error) {
+                        console.warn('Failed to parse WebSocket message:', error);
+                    }
+                };
+                
+                window.mcpWebSocket.onclose = function(event) {
+                    log('📡 WebSocket disconnected');
+                    updateSystemStatus('mcp-status', 'Disconnected', 'warn');
+                    
+                    // Attempt to reconnect
+                    if (window.wsReconnectAttempts < window.wsMaxReconnectAttempts) {
+                        window.wsReconnectAttempts++;
+                        const delay = Math.min(1000 * Math.pow(2, window.wsReconnectAttempts), 30000);
+                        log(`🔄 Attempting WebSocket reconnection in ${delay/1000}s (attempt ${window.wsReconnectAttempts}/${window.wsMaxReconnectAttempts})`);
+                        setTimeout(initializeWebSocket, delay);
+                    } else {
+                        log('❌ Max WebSocket reconnection attempts reached');
+                        updateSystemStatus('mcp-status', 'Offline', 'error');
+                    }
+                };
+                
+                window.mcpWebSocket.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    log('⚠ WebSocket connection error');
+                };
+                
+            } catch (error) {
+                console.error('Failed to initialize WebSocket:', error);
+                log('❌ WebSocket initialization failed');
+            }
+        }
+        
+        // Handle incoming WebSocket messages
+        function handleWebSocketMessage(message) {
+            const { type, data, timestamp } = message;
+            
+            switch (type) {
+                case 'connection':
+                    log(`🎉 ${data.message}`);
+                    break;
+                    
+                case 'cpu.step':
+                    if (data && typeof data.pc !== 'undefined') {
+                        // Update CPU display with real-time data
+                        if (cpu && cpu.registers) {
+                            cpu.registers.PC = data.pc;
+                            if (data.a !== undefined) cpu.registers.A = data.a;
+                            if (data.x !== undefined) cpu.registers.X = data.x;
+                            if (data.y !== undefined) cpu.registers.Y = data.y;
+                            if (data.sp !== undefined) cpu.registers.SP = data.sp;
+                        }
+                        updateCPUDisplay();
+                        log(`🔄 CPU step: PC=0x${data.pc?.toString(16)} instruction=${data.instruction}`, 'system-log');
+                    }
+                    break;
+                    
+                case 'memory.write':
+                    if (data && data.address !== undefined && data.value !== undefined) {
+                        // Update memory display for writes
+                        updateMemoryDisplay();
+                        log(`💾 Memory write: 0x${data.address.toString(16)} = 0x${data.value.toString(16)}`, 'system-log');
+                    }
+                    break;
+                    
+                case 'memory.read':
+                    if (data && data.address !== undefined) {
+                        log(`📖 Memory read: 0x${data.address.toString(16)} size=${data.size}`, 'system-log');
+                    }
+                    break;
+                    
+                case 'ai.generate':
+                    if (data) {
+                        log(`🤖 AI: ${data.task} (${data.tokensUsed} tokens, model: ${data.model})`, 'mcp-log');
+                    }
+                    break;
+                    
+                case 'video.setPixel':
+                    if (data && data.x !== undefined && data.y !== undefined) {
+                        // Update video display in real-time
+                        if (videoContext) {
+                            const color = data.color > 0 ? '#00ff00' : '#000000';
+                            videoContext.fillStyle = color;
+                            videoContext.fillRect(data.x, data.y, 1, 1);
+                        }
+                    }
+                    break;
+                    
+                case 'queue.status':
+                    if (data && data.items) {
+                        log(`📋 Queue: ${data.items.length} items, next: ${data.nextProgram || 'none'}`, 'system-log');
+                    }
+                    break;
+                    
+                default:
+                    // Log unknown message types for debugging
+                    log(`📡 WebSocket: ${type}`, 'system-log');
+                    break;
+            }
+        }
+        
+        // Helper: detect if command is requesting video/graphics functionality
+        function isVideoCommand(command) {
+            const lowerCmd = command.toLowerCase();
+            const videoKeywords = ['draw', 'pixel', 'graphics', 'video', 'visual', 'color', 'shape', 'line', 'square', 'circle'];
+            
+            // Simple check - let the AI handle the complexity
+            return videoKeywords.some(keyword => lowerCmd.includes(keyword)) && 
+                   !lowerCmd.includes('print') && !lowerCmd.includes('say') && !lowerCmd.includes('text');
+        }
+
+        // Helper: extract display text from natural language command
+        function extractTextFromCommand(command, defaultText = 'TEST OUTPUT') {
+            let textToOutput = defaultText;
+            const patterns = [
+                /["']([^"']+)["']/,  // Quoted text
+                /(?:say|print|output|display)\s+["']?([^"'\n.!?]+)["']?/i,
+                /(?:that says?)\s+["']?([^"'\n.!?]+)["']?/i,
+                /(?:text|message|word)\s+["']?([^"'\n.!?]+)["']?/i,
+                /\b([A-Z][A-Z\s]{2,20})\b/,  // All caps words
+            ];
+            for (let pattern of patterns) {
+                const m = command.match(pattern);
+                if (m && m[1] && m[1].trim().length > 0) {
+                    textToOutput = m[1].trim();
+                    break;
+                }
+            }
+            if (textToOutput === defaultText) {
+                const clean = command.replace(/make|create|program|that|says?|print|output|display|terminal|in|the|to|a/gi, '').trim();
+                if (clean.length > 0 && clean.length < 40) {
+                    textToOutput = clean;
+                }
+            }
+            return textToOutput;
+        }
+
+        // Generate graphics program by asking AI to create assembly code
+        async function buildVideoProgram(command) {
+            log(`🤖 Requesting AI to generate graphics assembly for: "${command}"`, 'mcp-log');
+            
+            // Generate contextual prompt based on command type
+            let contextualPrompt;
+            const lowerCmd = command.toLowerCase();
+
+            // Short-circuit: for short, deterministic drawing commands prefer manual generator
+            // This avoids roundtrips to AI that may return empty content for trivial requests
+            if (lowerCmd.length < 40 && (lowerCmd.includes('line') || lowerCmd.includes('square') || lowerCmd.includes('box') || lowerCmd.includes('pixel'))) {
+                log('🔧 Short-circuiting AI for simple drawing command; using manual generator', 'mcp-log');
+                // Use the manual path directly
+                // (reuse the code below by falling through to the manual fallback)
+                // We intentionally skip AI and jump to manual generation by not sending requests
+            } else {
+            
+            if (lowerCmd.includes('joke') || lowerCmd.includes('funny')) {
+                contextualPrompt = `Tell me a programming joke or computer joke.`;
+            } else if (lowerCmd.includes('draw') || lowerCmd.includes('graphics') || lowerCmd.includes('pixel') || lowerCmd.includes('line') || lowerCmd.includes('square') || lowerCmd.includes('circle')) {
+                contextualPrompt = `Generate 6502 assembly code for graphics: "${command}"
+
+Requirements:
+- Start with .org $0600
+- Use LDA #color, STA $address format
+- Video memory starts at $0200 (32 columns wide)
+- Colors: 1=green, 2=yellow, 3=red
+- End with HLT
+
+Example for red square:
+.org $0600
+LDA #3
+STA $0200
+STA $0201
+STA $0220
+STA $0221
+HLT
+
+Now generate code for: ${command}`;
+            } else if (lowerCmd.includes('hello') || lowerCmd.includes('hi ') || lowerCmd.includes('greet')) {
+                contextualPrompt = `Generate a friendly greeting response. Be creative and personable.`;
+            } else if (lowerCmd.includes('help') || lowerCmd.includes('what') || lowerCmd.includes('how')) {
+                contextualPrompt = `You are an AI assistant for a 6502 CPU emulator. Help the user with: "${command}"
+
+You can help with:
+- Loading and running programs
+- CPU operations (step, run, reset)
+- Memory viewing and editing
+- Graphics programming
+- Assembly language questions
+
+Provide a helpful response to: ${command}`;
+            } else if (lowerCmd.includes('program') || lowerCmd.includes('code') || lowerCmd.includes('assembly')) {
+                contextualPrompt = `Generate 6502 assembly code for: "${command}"
+
+Format:
+.org $0600
+[assembly instructions]
+HLT
+
+Use appropriate instructions for the task.`;
+            } else if (lowerCmd.includes('story') || lowerCmd.includes('tell me')) {
+                contextualPrompt = `Tell an interesting story or anecdote related to: "${command}"`;
+            } else if (lowerCmd.includes('explain') || lowerCmd.includes('what is') || lowerCmd.includes('define')) {
+                contextualPrompt = `Provide a clear explanation for: "${command}"`;
+            } else {
+                // Generic smart response
+                contextualPrompt = `Respond appropriately to this request: "${command}"
+
+Be helpful, creative, and contextually relevant. If it's about programming or computing, provide technical insights. If it's casual conversation, be friendly and engaging.`;
+            }
+
+            try {
+                // First check if MCP server is reachable
+                log(`🔍 Testing MCP server connection...`, 'mcp-log');
+                const healthCheck = await fetch('http://localhost:8001/health');
+                log(`🔍 Health check status: ${healthCheck.status}`, 'mcp-log');
+                
+                const apiKey = 'default-api-key-change-in-production';
+                
+                // Try to get available models
+                try {
+                    const modelsResponse = await fetch('http://localhost:8001/mcp/models', {
+                        headers: { 'X-API-Key': apiKey }
+                    });
+                    if (modelsResponse.ok) {
+                        const models = await modelsResponse.json();
+                        log(`🔍 Available models: ${JSON.stringify(models)}`, 'mcp-log');
+                    }
+                } catch (e) {
+                    log(`🔍 Could not fetch models: ${e.message}`, 'mcp-log');
+                }
+                log(`🔍 Sending simple test to AI...`, 'mcp-log');
+                const response = await fetch('http://localhost:8001/mcp/ai/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': apiKey
+                    },
+                    body: JSON.stringify({
+                        prompt: contextualPrompt,
+                        task: 'generation',
+                        options: {
+                            maxTokens: 400,
+                            temperature: 0.7
+                        }
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`🔍 AI Response Status: ${response.status}`, 'mcp-log');
+                    // Log a preview of the full JSON so we can debug empty-content cases without flooding the log
+                    try { log(`🔍 AI Result (preview): ${JSON.stringify(result).substring(0,1000)}`, 'mcp-log'); } catch(e) { log('🔍 AI Result (preview) failed to stringify', 'mcp-log'); }
+
+                    // Normalize content and retry once with a stricter prompt if it's empty
+                    let content = result.data?.content?.trim() || '';
+                    if (result.success && !content) {
+                        log(`⚠ AI returned empty content (${result.data?.tokensUsed || 0} tokens used); attempting one explicit retry`, 'mcp-log');
+                        try {
+                            const retryBody = {
+                                prompt: `Respond ONLY with the requested 6502 assembly code, no explanation or extra text.\n\n${contextualPrompt}`,
+                                task: 'generation',
+                                options: { maxTokens: 400, temperature: 0.2 }
+                            };
+                            const retryResponse = await fetch('http://localhost:8001/mcp/ai/generate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+                                body: JSON.stringify(retryBody)
+                            });
+                            if (retryResponse.ok) {
+                                const retryResult = await retryResponse.json();
+                                try { log(`🔍 Retry AI Result (preview): ${JSON.stringify(retryResult).substring(0,1000)}`, 'mcp-log'); } catch(e) { }
+                                const retryContent = retryResult.data?.content?.trim();
+                                if (retryContent) {
+                                    content = retryContent;
+                                } else {
+                                    log('⚠ Retry also returned empty content', 'mcp-log');
+                                }
+                            } else {
+                                log(`⚠ Retry request failed: ${retryResponse.status}`, 'mcp-log');
+                            }
+                        } catch (retryErr) {
+                            log(`⚠ Retry error: ${retryErr.message}`, 'mcp-log');
+                        }
+                    }
+
+                    if (result.success && content) {
+                        log(`✅ AI returned (${content.length} chars): "${content.substring(0, 200)}${content.length > 200 ? '...' : ''}"`, 'mcp-log');
+                        // For graphics commands, return the content to be processed as assembly
+                        if (lowerCmd.includes('draw') || lowerCmd.includes('graphics') || lowerCmd.includes('pixel') || lowerCmd.includes('line') || lowerCmd.includes('square') || lowerCmd.includes('circle')) {
+                            return content;
+                        } else {
+                            // For non-graphics commands, display the response in the log and return empty to avoid assembly processing
+                            log(`💬 AI Response: ${content}`, 'mcp-log');
+                            return null; // Signal that this isn't assembly code
+                        }
+                    } else {
+                        log(`⚠ grok-code-fast-1 returned empty content (${result.data?.tokensUsed || 0} tokens used)`, 'mcp-log');
+
+                        // Try with different models or tasks
+                        const fallbackStrategies = [
+                            { task: 'code', prompt: `Write 6502 assembly code to ${command}:\n\n.org $0600\nLDA #1\nSTA $0200\nHLT` },
+                            { task: 'generation', prompt: `Generate assembly code: ${command}` },
+                            { task: 'explanation', prompt: `How would you write 6502 assembly for: ${command}` }
+                        ];
+
+                        for (const strategy of fallbackStrategies) {
+                            try {
+                                log(`🔄 Trying fallback: task=${strategy.task}`, 'mcp-log');
+                                const fallbackResponse = await fetch('http://localhost:8001/mcp/ai/generate', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-API-Key': apiKey
+                                    },
+                                    body: JSON.stringify({
+                                        prompt: strategy.prompt,
+                                        task: strategy.task,
+                                        options: {
+                                            maxTokens: 300,
+                                            temperature: 0.3
+                                        }
+                                    })
+                                });
+
+                                if (fallbackResponse.ok) {
+                                    const fallbackResult = await fallbackResponse.json();
+                                    if (fallbackResult.success && fallbackResult.data && fallbackResult.data.content && fallbackResult.data.content.trim()) {
+                                        log(`✅ Fallback ${strategy.task} succeeded: "${fallbackResult.data.content.substring(0, 100)}..."`, 'mcp-log');
+                                        return fallbackResult.data.content;
+                                    } else {
+                                        log(`⚠ Fallback ${strategy.task} also empty`, 'mcp-log');
+                                    }
+                                }
+                            } catch (fallbackError) {
+                                log(`⚠ Fallback ${strategy.task} error: ${fallbackError.message}`, 'mcp-log');
+                            }
+                        }
+
+                        log(`⚠ All AI strategies failed, generating manual assembly`, 'mcp-log');
+                    }
+                } else {
+                    log(`❌ AI request failed: ${response.status}`, 'mcp-log');
+                    const errorText = await response.text();
+                    log(`❌ AI Error: ${errorText}`, 'mcp-log');
+                }
+            } catch (error) {
+                log(`⚠ AI graphics generation failed: ${error.message}`, 'mcp-log');
+            }
+            
+            // Manual fallback - generate working assembly based on command
+            log(`🔧 Generating manual assembly for: ${command}`, 'mcp-log');
+            
+            const lowerCmd = command.toLowerCase();
+            let color = 1; // green
+            if (lowerCmd.includes('yellow')) color = 2;
+            else if (lowerCmd.includes('red')) color = 3;
+            
+            let assembly = '.org $0600\n';
+            
+            if (lowerCmd.includes('square') || lowerCmd.includes('box')) {
+                // Draw a 4x4 square
+                assembly += `; Manual square generation\n`;
+                assembly += `LDA #${color}\n`;
+                const positions = [0x0200, 0x0201, 0x0202, 0x0203, 0x0220, 0x0223, 0x0240, 0x0243, 0x0260, 0x0261, 0x0262, 0x0263];
+                for (const pos of positions) {
+                    assembly += `STA $${pos.toString(16).padStart(4, '0').toUpperCase()}\n`;
+                }
+            } else if (lowerCmd.includes('line')) {
+                // Draw a line
+                assembly += `; Manual line generation\n`;
+                assembly += `LDA #${color}\n`;
+                for (let i = 0; i < 16; i++) {
+                    const addr = (0x0200 + i).toString(16).padStart(4, '0').toUpperCase();
+                    assembly += `STA $${addr}\n`;
+                }
+            } else {
+                // Default pattern
+                assembly += `; Manual graphics generation\n`;
+                assembly += `LDA #${color}\n`;
+                for (let i = 0; i < 8; i++) {
+                    const addr = (0x0200 + i * 2).toString(16).padStart(4, '0').toUpperCase();
+                    assembly += `STA $${addr}\n`;
+                }
+            }
+            
+            assembly += 'HLT';
+            log(`✅ Generated manual assembly (${assembly.split('\n').length} lines)`, 'mcp-log');
+            return assembly;
+        }
+
+        // Helper to build a simple text program
+        function buildPrintProgram(text) {
+            const lines = [
+                `; Simple program to output: ${text}`,
+                '.org $0600',
+                '',
+                'start:'
+            ];
+            
+            // Add code to output each character
+            for (let i = 0; i < text.length; i++) {
+                const charCode = text.charCodeAt(i);
+                lines.push(`    LDA #${charCode}        ; Load '${text[i]}'`);
+                lines.push('    STA $F1         ; Write to terminal');
+            }
+            
+            // Add newline and halt
+            lines.push('    LDA #10         ; Load newline');
+            lines.push('    STA $F1         ; Write to terminal');
+            lines.push('    HLT             ; Halt the processor');
+            
+            return lines.join('\n');
+        }
+
+        // Helper to handle AI response and execute commands
+        async function handleAIResponse(content) {
+            log(`🔍 Debugging AI response: ${content.length} chars`, 'mcp-log');
+            log(`🔍 Full content: "${content}"`, 'mcp-log');
+            log(`🔍 Looking for code blocks or assembly patterns...`, 'mcp-log');
+            
+            // Check if the AI response contains assembly code - try multiple patterns
+            let assemblyCodeMatch = content.match(/```(?:assembly|asm|6502)\s*([\s\S]*?)```/i);
+            if (!assemblyCodeMatch) {
+                assemblyCodeMatch = content.match(/```([\s\S]*?)```/i);
+            }
+            if (!assemblyCodeMatch) {
+                assemblyCodeMatch = content.match(/(?:^|\n)\s*(\.org[\s\S]*?HLT[\s\S]*?)(?:$|\n)/im);
+            }
+            if (!assemblyCodeMatch) {
+                assemblyCodeMatch = content.match(/(LDA[\s\S]*?(?:HLT|BRK))/i);
+            }
+            // If still no match, handle partial/unclosed code fence by stripping the fence header
+            let partialFence = false;
+            if (!assemblyCodeMatch && /^```(?:assembly|asm|6502)\b/i.test(content)) {
+                partialFence = true;
+                const stripped = content.replace(/^```(?:assembly|asm|6502)\b[^\n]*\n?/i, '');
+                assemblyCodeMatch = [stripped, stripped];
+                log('🔍 Detected partial code fence; using stripped content', 'mcp-log');
+            }
+                                     
+            if (assemblyCodeMatch) {
+                log(`🔍 Found assembly code match! Match index: ${assemblyCodeMatch.index}, groups: ${assemblyCodeMatch.length}`, 'mcp-log');
+                log(`🔍 Match[0]: "${assemblyCodeMatch[0]}"`, 'mcp-log');
+                if (assemblyCodeMatch[1]) {
+                    log(`🔍 Match[1]: "${assemblyCodeMatch[1]}"`, 'mcp-log');
+                }
+            } else {
+                log(`🔍 No assembly code patterns found`, 'mcp-log');
+                log(`🔍 Content preview: "${content.substring(0, 300)}"`, 'mcp-log');
+                // Check if content contains assembly-like words
+                if (content.match(/(?:LDA|STA|org|6502)/i)) {
+                    log(`🔍 But content contains assembly keywords - trying raw extraction`, 'mcp-log');
+                    assemblyCodeMatch = [content, content]; // Fake match to trigger processing
+                }
+            }
+            
+            if (assemblyCodeMatch) {
+                let assemblyCode = assemblyCodeMatch[1] || assemblyCodeMatch[0];
+                
+                // Clean up the assembly code
+                assemblyCode = assemblyCode.trim();
+                
+                // Remove any leading/trailing formatting
+                assemblyCode = assemblyCode.replace(/^```(?:assembly|asm|6502)?\s*\n?/i, '').replace(/\n?```$/i, '');
+                
+                // If it's clearly incomplete (no opcodes), fallback to generated program
+                const hasOpcodes = /(LDA|STA|JMP|BRK|NOP|CMP|BEQ|BNE|JSR|RTS|PHA|PLA|TAX|TAY|TXA|TYA|INX|INY|DEX|DEY|HLT)/i.test(assemblyCode);
+                if (!hasOpcodes) {
+                    const originalCommand = document.getElementById('mcp-input').getAttribute('data-last-command') || '';
+                    
+                    // Check if this is a graphics/video command first
+                    if (isVideoCommand(originalCommand)) {
+                        log('🔧 AI content lacked opcodes; generating video program from command', 'mcp-log');
+                        try {
+                            const program = await buildVideoProgram(originalCommand);
+                            document.getElementById('sample-programs').value = '';
+                            document.getElementById('assembly-editor').value = program;
+                            document.getElementById('editor-status').textContent = 'AI Generated (Video)';
+                            setTimeout(() => {
+                                assembleAndLoad();
+                                log(`🤖 Video program loaded and assembled - ready to run!`, 'mcp-log');
+                                if (originalCommand.toLowerCase().includes('run')) {
+                                    setTimeout(() => { runCPU(); }, 500);
+                                }
+                            }, 100);
+                        } catch (error) {
+                            log(`❌ Graphics generation failed: ${error.message}`, 'mcp-log');
+                        }
+                        return;
+                    }
+                    
+                    // Otherwise, generate text program
+                    const text = extractTextFromCommand(originalCommand, 'TEST OUTPUT');
+                    const program = buildPrintProgram(text);
+                    log('🔧 AI content lacked opcodes; generating fallback text program from command', 'mcp-log');
+                    document.getElementById('sample-programs').value = '';
+                    document.getElementById('assembly-editor').value = program;
+                    document.getElementById('editor-status').textContent = 'AI Generated (Fallback)';
+                    setTimeout(() => {
+                        assembleAndLoad();
+                        log(`🤖 Program "${text}" loaded and assembled - ready to run!`, 'mcp-log');
+                        if (originalCommand.toLowerCase().includes('run')) {
+                            setTimeout(() => { runCPU(); }, 500);
+                        }
+                    }, 100);
+                    return;
+                }
+
+                // Check if it looks like actual assembly code
+                if (assemblyCode.match(/(?:LDA|STA|JMP|BRK|NOP|CMP|BEQ|BNE|JSR|RTS|PHA|PLA|TAX|TAY|TXA|TYA|INX|INY|DEX|DEY|HLT)/i)) {
+                    log(`🤖 AI generated assembly code, loading into editor...`, 'mcp-log');
+                    
+                    // Clear any selected sample to avoid confusion
+                    document.getElementById('sample-programs').value = '';
+                    
+                    // Load the assembly code into the editor
+                    document.getElementById('assembly-editor').value = assemblyCode;
+                    document.getElementById('editor-status').textContent = 'AI Generated';
+                    
+                    // Automatically assemble and load the code
+                    setTimeout(() => {
+                        assembleAndLoad();
+                        log(`🤖 Assembly code loaded and assembled automatically`, 'mcp-log');
+                        
+                        // If the original command mentioned "run", start the CPU
+                        const originalCommand = document.getElementById('mcp-input').getAttribute('data-last-command') || '';
+                        if (originalCommand.toLowerCase().includes('run')) {
+                            setTimeout(() => {
+                                runCPU();
+                                log(`🤖 Starting CPU execution as requested`, 'mcp-log');
+                            }, 500);
+                        }
+                    }, 100);
+                    
+                    return; // Don't process other commands if we handled assembly code
+                }
+            }
+            
+            // Look for command patterns in the AI response
+            if (content.includes('CPU step')) {
+                const match = content.match(/step\s+the\s+CPU\s+(\d+)\s+times?/i) || content.match(/step\s+(\d+)\s+times?/i);
+                if (match && match[1]) {
+                    const steps = parseInt(match[1]);
+                    if (!isNaN(steps) && steps > 0) {
+                        log(`🤖 Executing command: Step CPU ${steps} times`, 'mcp-log');
+                        for (let i = 0; i < steps; i++) {
+                            stepCPU();
+                        }
+                    }
+                }
+            } else if (content.includes('reset') && content.includes('CPU')) {
+                log(`🤖 Executing command: Reset CPU`, 'mcp-log');
+                resetCPU();
+            } else if ((content.includes('run') || content.includes('start')) && content.includes('CPU')) {
+                log(`🤖 Executing command: Run CPU`, 'mcp-log');
+                runCPU();
+            } else if (content.includes('stop') && content.includes('CPU')) {
+                log(`🤖 Executing command: Stop CPU`, 'mcp-log');
+                stopCPU();
+            } else if (content.includes('load') && content.includes('hello world')) {
+                log(`🤖 Executing command: Load Hello World program`, 'mcp-log');
+                document.getElementById('sample-programs').value = 'hello-world.asm';
+                loadSample();
+            } else if (content.includes('memory at') || content.includes('show memory')) {
+                const match = content.match(/0x([0-9a-fA-F]+)/i);
+                if (match && match[1]) {
+                    const addr = match[1];
+                    log(`🤖 Executing command: Show memory at 0x${addr}`, 'mcp-log');
+                    document.getElementById('memory-address').value = addr;
+                    gotoMemoryAddress();
+                }
+            } else if (content.includes('video') || content.includes('pixel') || content.includes('display')) {
+                // Handle video-related commands
+                log(`🤖 Processing video command`, 'mcp-log');
+                
+                if (content.includes('clear')) {
+                    clearVideo();
+                    log(`🤖 Cleared video display`, 'mcp-log');
+                } else if (content.includes('update') || content.includes('refresh')) {
+                    if (window.videoDisplay) {
+                        window.videoDisplay.updateDisplay();
+                        log(`🤖 Updated video display`, 'mcp-log');
+                    }
+                } else {
+                    // This might be a request for video graphics - check if we need to generate a graphics program
+                    const originalCommand = document.getElementById('mcp-input').getAttribute('data-last-command') || '';
+                    if (originalCommand.toLowerCase().includes('draw') || originalCommand.toLowerCase().includes('pixel') || originalCommand.toLowerCase().includes('graphics')) {
+                        // Generate a simple graphics program
+                        try {
+                            const program = await buildVideoProgram(originalCommand);
+                            document.getElementById('sample-programs').value = '';
+                            document.getElementById('assembly-editor').value = program;
+                            document.getElementById('editor-status').textContent = 'AI Generated (Video)';
+                            setTimeout(() => {
+                                assembleAndLoad();
+                                log(`🤖 Video program loaded and assembled - ready to run!`, 'mcp-log');
+                                if (originalCommand.toLowerCase().includes('run')) {
+                                    setTimeout(() => { runCPU(); }, 500);
+                                }
+                            }, 100);
+                        } catch (error) {
+                            log(`❌ Graphics generation failed: ${error.message}`, 'mcp-log');
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update system time
+        setInterval(() => {
+            document.getElementById('system-time').textContent = new Date().toLocaleTimeString();
+        }, 1000);
+
+        // Initialize on load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeSystem);
+        } else {
+            initializeSystem();
+        }
+    </script>
+</body>
+</html>

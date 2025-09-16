@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { createDeveloperAdapters } from './mcp_developer_adapter.js';
 import MultiModelMCPServer from './multi_model_mcp_server.js';
 import AIModelHandler from './ai-model-handler.js';
-import WebSocket from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 // Winston structured logging setup
 // Define __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -78,10 +78,11 @@ import { sanitizeProgramName, sanitizeProgramSource, validateMemoryAddress, vali
 
 // Create Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8001;
 
-// Server instance for graceful shutdown
+// Server instances for graceful shutdown
 let server = null;
+let wss = null;
 
 // Middleware
 app.use(cors());
@@ -590,6 +591,86 @@ app.post('/mcp/cpu/reset', retryHandler(3, 1000, 'cpu'), moderateLimiter, asyncH
   } catch (error) {
     const stdError = ErrorHandler.standardizeError(error, 'mcp_server::cpu_reset');
     throw new MCPError('CPU_NOT_READY', 'CPU operation failed', { originalError: stdError.message }, 500, true, 3, 1000, 'cpu', 5000);
+  }
+}));
+
+// Memory clear endpoint - clear specified memory regions
+app.post('/mcp/memory/clear', authenticateAPIKey, moderateLimiter, asyncHandler(async (req, res) => {
+  try {
+    const { region = 'program', value = 0 } = req.body;
+    
+    // Define memory regions
+    const regions = {
+      'program': { start: 0x0600, end: 0x07FF, name: 'Program Memory' },
+      'video': { start: 0x0200, end: 0x05FF, name: 'Video Memory' },
+      'stack': { start: 0x0100, end: 0x01FF, name: 'Stack' },
+      'zero-page': { start: 0x0000, end: 0x00FF, name: 'Zero Page' },
+      'all': { start: 0x0000, end: 0xFFFF, name: 'All Memory' }
+    };
+    
+    if (!regions[region]) {
+      throw new MCPError('INVALID_REQUEST', `Invalid memory region: ${region}. Valid regions: ${Object.keys(regions).join(', ')}`, null, 400);
+    }
+    
+    const targetRegion = regions[region];
+    const clearValue = Math.max(0, Math.min(255, parseInt(value) || 0));
+    
+    logger.info('Memory clear request processed', {
+      endpoint: 'POST /mcp/memory/clear',
+      region,
+      range: `0x${targetRegion.start.toString(16)}-0x${targetRegion.end.toString(16)}`,
+      value: clearValue
+    });
+    
+    // Clear memory region
+    let bytesCleared = 0;
+    const batchSize = 256; // Clear in batches to avoid overloading
+    
+    for (let addr = targetRegion.start; addr <= targetRegion.end; addr += batchSize) {
+      const endAddr = Math.min(addr + batchSize - 1, targetRegion.end);
+      
+      // Clear this batch
+      for (let batchAddr = addr; batchAddr <= endAddr; batchAddr++) {
+        try {
+          adapters.memory.write(batchAddr, clearValue, 1);
+          bytesCleared++;
+        } catch (error) {
+          logger.warn('Failed to clear memory address', { address: `0x${batchAddr.toString(16)}`, error: error.message });
+        }
+      }
+      
+      // Broadcast progress every batch
+      if (typeof broadcastEvent === 'function') {
+        broadcastEvent('memory.clear.progress', {
+          region,
+          cleared: bytesCleared,
+          total: targetRegion.end - targetRegion.start + 1,
+          currentAddress: endAddr
+        });
+      }
+    }
+    
+    const result = {
+      region,
+      range: `0x${targetRegion.start.toString(16)}-0x${targetRegion.end.toString(16)}`,
+      bytesCleared,
+      value: clearValue
+    };
+    
+    // Broadcast memory clear completion
+    if (typeof broadcastEvent === 'function') {
+      broadcastEvent('memory.clear', result);
+    }
+    
+    logger.info('Memory clear completed', result);
+    res.json(successResponse(result));
+    
+  } catch (error) {
+    const stdError = ErrorHandler.standardizeError(error, 'mcp_server::memory_clear');
+    if (error instanceof MCPError) {
+      throw error;
+    }
+    throw new MCPError('INTERNAL_ERROR', 'Memory clear failed', stdError.message, 500);
   }
 }));
 
@@ -2203,6 +2284,19 @@ async function shutdown() {
   console.log('Performing graceful shutdown of MCP Server...');
 
   try {
+    // Close WebSocket server first
+    if (wss) {
+      console.log('Closing WebSocket connections...');
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.close();
+        }
+      });
+      wss.close(() => {
+        console.log('WebSocket server closed');
+      });
+    }
+    
     // Stop accepting new connections
     if (server) {
       server.close(() => {
@@ -2312,15 +2406,63 @@ async function startServer() {
       console.log(`Health check: http://127.0.0.1:${PORT}/health`);
       console.log(`API base URL: http://127.0.0.1:${PORT}/mcp`);
 
-      // WebSocket server initialization temporarily disabled due to ESM import issues
-      // TODO: Fix WebSocket server setup for production
-      console.log('WebSocket server disabled - using direct HTTP endpoints for MCP events');
-      
-      // Define broadcastEvent as a no-op function for now, ensuring it's globally available
-      globalThis.broadcastEvent = (eventType, data) => {
-        logger.info('Broadcast event (disabled)', { eventType, data });
-        // In production, this would broadcast via WebSocket
-      };
+      // Initialize WebSocket server
+      try {
+        wss = new WebSocketServer({ server });
+        
+        wss.on('connection', (ws) => {
+          console.log('WebSocket client connected');
+          
+          // Send welcome message
+          ws.send(JSON.stringify({
+            type: 'connection',
+            data: { message: 'Connected to iMaCoMpUtERussy MCP WebSocket' },
+            timestamp: new Date().toISOString()
+          }));
+          
+          ws.on('close', () => {
+            console.log('WebSocket client disconnected');
+          });
+          
+          ws.on('error', (error) => {
+            console.error('WebSocket error:', error);
+          });
+        });
+        
+        console.log(`WebSocket server initialized on ws://127.0.0.1:${PORT}`);
+        
+        // Define broadcastEvent to actually broadcast via WebSocket
+        globalThis.broadcastEvent = (eventType, data) => {
+          const message = {
+            type: eventType,
+            data,
+            timestamp: new Date().toISOString()
+          };
+          
+          // Broadcast to all connected clients
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              try {
+                client.send(JSON.stringify(message));
+              } catch (error) {
+                console.error('Error sending WebSocket message:', error);
+              }
+            }
+          });
+          
+          // Also log for debugging
+          logger.debug('Broadcast event', { eventType, clientCount: wss.clients.size });
+        };
+        
+      } catch (error) {
+        console.error('Failed to initialize WebSocket server:', error);
+        console.log('Falling back to no-op broadcast function');
+        
+        // Fallback to no-op function
+        globalThis.broadcastEvent = (eventType, data) => {
+          logger.info('Broadcast event (WebSocket failed)', { eventType, data });
+        };
+      }
       
       // Define checkBreakpoint as a no-op function to prevent undefined errors
       globalThis.checkBreakpoint = () => {
