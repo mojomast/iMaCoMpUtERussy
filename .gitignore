@@ -57,7 +57,13 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
+.env.*              # All dotenv variant files (local, development, production, test, etc.)
+.env.local          # Local overrides (commonly used by CRA/Vite)
 .env.test
+.env.production
+.env.development
+.env.example        # add example to repo (ignored here to ensure only template)
+.envrc              # direnv
 
 # Temporary files
 tmp/
@@ -79,6 +85,26 @@ build/
 secrets.json
 config/local.json
 
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# SSH keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# Credentials and token files
+credentials.json
+*-credentials.json
+service-account.json
+google-credentials.json
+gcloud-service-key.json
+
 # YouTube API credentials
 youtube-credentials.json
 
@@ -95,3 +121,8 @@ test-videos/
 
 # Hackathon project
 hackathon-project/
+
+# Local environment overrides and editor backups
+local.env
+*.env.backup
+*.local
