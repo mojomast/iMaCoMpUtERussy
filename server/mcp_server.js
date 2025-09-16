@@ -2134,15 +2134,47 @@ app.post('/mcp/ai/generate', retryHandler(3, 1000, 'ai'), authenticateAPIKey, mo
     logger.debug('Selecting best model for AI generation', { task: taskType, promptPreview: sanitizedPrompt.substring(0, 50) + '...' });
     const aiResult = await multiModelServer.generateWithBestModel(sanitizedPrompt, taskType, options);
     logger.debug('AI model generation completed', { modelUsed: aiResult.model || 'unknown', success: aiResult.success, tokensUsed: aiResult.tokensUsed || 0 });
-    
+
     // Format response according to schema
     let responseData;
     if (aiResult.success) {
+      const content = aiResult.content || aiResult.generatedText || '';
+      const contentLength = content.length;
+
+      // Enhanced logging for empty content detection
+      if (contentLength === 0) {
+        logger.warn('AI model returned empty content', {
+          model: aiResult.model,
+          tokensUsed: aiResult.tokensUsed || 0,
+          actualProvider: aiResult.actualProvider || 'unknown',
+          routingInfo: aiResult.routingInfo || {},
+          task: taskType,
+          promptLength: sanitizedPrompt.length
+        });
+      } else if (contentLength < 20) {
+        logger.warn('AI model returned very short content', {
+          model: aiResult.model,
+          contentLength,
+          tokensUsed: aiResult.tokensUsed || 0,
+          actualProvider: aiResult.actualProvider || 'unknown',
+          contentPreview: content.substring(0, 50)
+        });
+      } else {
+        logger.info('AI model generated successful content', {
+          model: aiResult.model,
+          contentLength,
+          tokensUsed: aiResult.tokensUsed || 0,
+          actualProvider: aiResult.actualProvider || 'unknown'
+        });
+      }
+
       responseData = {
-        content: aiResult.content || aiResult.generatedText || '',
+        content: content,
         model: aiResult.model || 'unknown',
         tokensUsed: aiResult.tokensUsed || 0,
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        actualProvider: aiResult.actualProvider,
+        routingInfo: aiResult.routingInfo
       };
     } else {
       responseData = {

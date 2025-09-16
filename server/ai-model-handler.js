@@ -84,30 +84,39 @@ class AIModelHandler {
    * @returns {Promise<Object>} Generation result
    */
   async generateWithBestModel(prompt, task = 'generation', options = {}) {
+    console.log(`🎯 generateWithBestModel called with task: ${task}, prompt length: ${prompt.length}`);
+    console.log(`🎯 Options:`, JSON.stringify(options, null, 2));
+    console.log(`🎯 Default model: ${this.defaultModel}, Default provider: ${this.defaultProvider}`);
+
     // Determine which provider to use based on available API keys
     const availableProviders = this.getAvailableProviders();
-    
+
     if (availableProviders.length === 0) {
       throw new Error('No AI providers configured. Please set API keys in .env file.');
     }
-    
+
     // Try providers in order of preference
     const providerOrder = this.getProviderOrder(task);
-    
+    console.log(`🔄 Trying providers in order: ${providerOrder.join(', ')}`);
+
     for (const providerName of providerOrder) {
       if (!availableProviders.includes(providerName)) continue;
-      
+
       try {
+        console.log(`🔄 Attempting provider: ${providerName}`);
         const result = await this.callProvider(providerName, prompt, options);
         if (result.success) {
+          console.log(`✅ Provider ${providerName} succeeded with model: ${result.model}`);
           return result;
+        } else {
+          console.log(`❌ Provider ${providerName} returned success=false`);
         }
       } catch (error) {
-        console.error(`Provider ${providerName} failed:`, error.message);
+        console.error(`❌ Provider ${providerName} failed:`, error.message);
         // Continue to next provider
       }
     }
-    
+
     throw new Error('All AI providers failed to generate response');
   }
 
@@ -363,7 +372,7 @@ class AIModelHandler {
   async callRequesty(prompt, options = {}) {
     const provider = this.providers.requesty;
     let model = options.model || this.requestyModel || process.env.DEFAULT_MODEL || 'auto';
-    
+
     // Debug logging
     console.log('Requesty API call starting:', {
       endpoint: provider.endpoint,
@@ -371,11 +380,24 @@ class AIModelHandler {
       requestyModel: this.requestyModel,
       hasApiKey: !!provider.apiKey
     });
-    
+
     // Clean up model name for Requesty - remove 'requesty/' prefix if present
     if (model.startsWith('requesty/')) {
       model = model.replace('requesty/', '');
       console.log('Cleaned model name:', model);
+    }
+
+    // Enhanced empty content retry logic for all models
+    console.log(`🔍 Checking if model "${model}" needs retry logic...`);
+    console.log(`🔍 Model includes 'grok': ${model.includes('grok')}`);
+    console.log(`🔍 Model includes 'xai': ${model.includes('xai')}`);
+
+    // Apply retry logic to Grok and XAI models
+    if (model.includes('grok') || model.includes('xai')) {
+      console.log(`🚀 Calling enhanced retry logic for model: ${model}`);
+      return await this.callEnhancedEmptyContentRetry(prompt, options, provider, model);
+    } else {
+      console.log(`➡️ Using normal Requesty call for model: ${model}`);
     }
     
     const requestBody = {
@@ -461,6 +483,308 @@ class AIModelHandler {
       },
       generatedAt: new Date().toISOString()
     };
+  }
+
+  /**
+   * Call Requesty API with specialized empty content handling for Grok models
+   * @param {string} prompt - Prompt to send
+   * @param {Object} options - Additional options
+   * @param {Object} provider - Provider configuration
+   * @param {string} model - Model name
+   * @returns {Promise<Object>} API response
+   */
+  async callRequestyWithEmptyContentRetry(prompt, options = {}, provider, model) {
+    const maxRetries = 3;
+    let lastError = null;
+    let lastResult = null;
+
+    console.log(`🔄 ENTERING Grok retry logic for model: ${model}, prompt length: ${prompt.length}`);
+    console.log(`🔍 Model includes 'grok': ${model.includes('grok')}`);
+    console.log(`🔍 Current options:`, JSON.stringify(options, null, 2));
+
+    // Adjust initial parameters for better Grok performance
+    let currentOptions = { ...options };
+    if (!currentOptions.temperature || currentOptions.temperature < 0.3) {
+      currentOptions.temperature = 0.3; // Slightly higher temperature for more consistent output
+    }
+
+    console.log(`⚙️ Adjusted initial parameters: temperature=${currentOptions.temperature}, maxTokens=${currentOptions.maxTokens}`);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Grok retry attempt ${attempt}/${maxRetries} with model ${model}`);
+        console.log(`📊 Current attempt parameters: temp=${currentOptions.temperature}, maxTokens=${currentOptions.maxTokens}`);
+
+        const result = await this.makeRequestyCall(prompt, currentOptions, provider, model);
+
+        // Check if content is empty or too short
+        const content = result.content || '';
+        const isEmptyContent = !content.trim() || content.trim().length < 10;
+
+        console.log(`📝 Content analysis: length=${content.length}, trimmed_length=${content.trim().length}, isEmpty=${isEmptyContent}`);
+        console.log(`📝 Content preview: "${content.trim().substring(0, 50)}..."`);
+        console.log(`📊 Tokens used: ${result.tokensUsed}, Model: ${result.model}`);
+
+        if (isEmptyContent) {
+          console.warn(`❌ Grok attempt ${attempt}: Empty or insufficient content (${content.length} chars), tokens used: ${result.tokensUsed}`);
+
+          // If this is the last attempt, try fallback to alternative model
+          if (attempt === maxRetries) {
+            console.log('🔄 All Grok attempts failed with empty content, trying fallback model...');
+            return await this.callRequestyFallback(prompt, options, provider);
+          }
+
+          // Adjust parameters for next attempt
+          const oldTemp = currentOptions.temperature;
+          const oldMaxTokens = currentOptions.maxTokens || 2000;
+          currentOptions.temperature = Math.min(currentOptions.temperature + 0.2, 0.8); // Increase temperature
+          currentOptions.maxTokens = Math.min((currentOptions.maxTokens || 2000) + 200, 3000); // Increase max tokens
+
+          console.log(`⚙️ Parameter adjustment: temp ${oldTemp} -> ${currentOptions.temperature}, maxTokens ${oldMaxTokens} -> ${currentOptions.maxTokens}`);
+
+          // Add delay before retry
+          console.log(`⏱️ Waiting ${1000 * attempt}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+
+          continue;
+        }
+
+        console.log(`✅ Grok attempt ${attempt} successful with ${content.length} characters`);
+        return result;
+
+      } catch (error) {
+        console.error(`Grok attempt ${attempt} failed with error:`, error.message);
+        lastError = error;
+
+        // If it's a network/API error and not the last attempt, continue retrying
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          continue;
+        }
+      }
+    }
+
+    // If we get here, all attempts failed
+    if (lastResult) {
+      console.warn('Returning last result despite empty content as all retries exhausted');
+      return lastResult;
+    }
+
+    throw lastError || new Error('All Grok retry attempts failed');
+  }
+
+  /**
+   * Make the actual Requesty API call (extracted for reuse)
+   * @param {string} prompt - Prompt to send
+   * @param {Object} options - Additional options
+   * @param {Object} provider - Provider configuration
+   * @param {string} model - Model name
+   * @returns {Promise<Object>} API response
+   */
+  async makeRequestyCall(prompt, options, provider, model) {
+    const requestBody = {
+      model: model === 'auto' ? undefined : model,
+      messages: [
+        {
+          role: 'system',
+          content: model.includes('grok')
+            ? 'You are an expert 6502 assembly code generator. Generate efficient, well-commented assembly code for the iMaCoMpUtERussy emulator. Focus on clean, optimized code with clear structure. Always provide meaningful code output.'
+            : 'You are an expert 6502 assembly programmer helping with the iMaCoMpUtERussy emulator.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: options.temperature || 0.7,
+      max_tokens: options.maxTokens || 2000,
+      routing: {
+        mode: provider.routingMode,
+        preferences: {
+          cost: provider.routingMode === 'cost-optimized' ? 1.0 : 0.5,
+          quality: provider.routingMode === 'quality-optimized' ? 1.0 : 0.5,
+          speed: provider.routingMode === 'speed-optimized' ? 1.0 : 0.5,
+          codeGeneration: model.includes('grok-code-fast') ? 1.0 : 0.7
+        },
+        fallback: true,
+        retry: {
+          enabled: true,
+          maxAttempts: 3
+        }
+      },
+      metadata: {
+        projectId: provider.projectId,
+        source: 'imacomputerussy',
+        task: options.task || 'generation'
+      }
+    };
+
+    if (model === 'auto') {
+      delete requestBody.model;
+    }
+
+    if (this.debugMode) {
+      console.log('Requesty request:', JSON.stringify(requestBody, null, 2));
+    }
+
+    const response = await fetch(provider.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${provider.apiKey}`,
+        'X-Project-Id': provider.projectId || 'default',
+        'X-Routing-Mode': provider.routingMode
+      },
+      body: JSON.stringify(requestBody),
+      timeout: options.timeout || 45000
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Requesty API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+
+    return {
+      success: true,
+      provider: 'requesty',
+      model: data.model_used || data.model || 'auto-selected',
+      actualProvider: data.provider_used || 'unknown',
+      content: data.choices[0].message.content || '',
+      tokensUsed: data.usage?.total_tokens || 0,
+      cost: data.usage?.total_cost || 0,
+      routingInfo: {
+        mode: provider.routingMode,
+        selectedProvider: data.provider_used,
+        fallbackUsed: data.fallback_used || false,
+        latency: data.latency_ms || 0
+      },
+      generatedAt: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Enhanced empty content retry logic for all models prone to empty responses
+   * @param {string} prompt - Prompt to send
+   * @param {Object} options - Additional options
+   * @param {Object} provider - Provider configuration
+   * @param {string} model - Model name
+   * @returns {Promise<Object>} API response
+   */
+  async callEnhancedEmptyContentRetry(prompt, options = {}, provider, model) {
+    const maxRetries = 3;
+    let lastError = null;
+    let lastResult = null;
+
+    console.log(`🔄 ENTERING enhanced retry logic for model: ${model}, prompt length: ${prompt.length}`);
+    console.log(`🔍 Current options:`, JSON.stringify(options, null, 2));
+
+    // Adjust initial parameters for better performance
+    let currentOptions = { ...options };
+    if (!currentOptions.temperature || currentOptions.temperature < 0.3) {
+      currentOptions.temperature = 0.3; // Slightly higher temperature for more consistent output
+    }
+
+    console.log(`⚙️ Adjusted initial parameters: temperature=${currentOptions.temperature}, maxTokens=${currentOptions.maxTokens}`);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Enhanced retry attempt ${attempt}/${maxRetries} with model ${model}`);
+        console.log(`📊 Current attempt parameters: temp=${currentOptions.temperature}, maxTokens=${currentOptions.maxTokens}`);
+
+        const result = await this.makeRequestyCall(prompt, currentOptions, provider, model);
+
+        // Check if content is empty or too short
+        const content = result.content || '';
+        const isEmptyContent = !content.trim() || content.trim().length < 5; // Lower threshold for better detection
+
+        console.log(`📝 Content analysis: length=${content.length}, trimmed_length=${content.trim().length}, isEmpty=${isEmptyContent}`);
+        console.log(`📝 Content preview: "${content.trim().substring(0, 50)}..."`);
+        console.log(`📊 Tokens used: ${result.tokensUsed}, Model: ${result.model}`);
+
+        if (isEmptyContent) {
+          console.warn(`❌ Enhanced attempt ${attempt}: Empty or insufficient content (${content.length} chars), tokens used: ${result.tokensUsed}`);
+
+          // If this is the last attempt, try fallback to alternative model
+          if (attempt === maxRetries) {
+            console.log('🔄 All attempts failed with empty content, trying fallback model...');
+            return await this.callRequestyFallback(prompt, options, provider);
+          }
+
+          // Adjust parameters for next attempt - more aggressive adjustments
+          const oldTemp = currentOptions.temperature;
+          const oldMaxTokens = currentOptions.maxTokens || 2000;
+          currentOptions.temperature = Math.min(currentOptions.temperature + 0.3, 0.9); // Increase temperature more aggressively
+          currentOptions.maxTokens = Math.min((currentOptions.maxTokens || 2000) + 500, 4000); // Increase max tokens more aggressively
+
+          console.log(`⚙️ Enhanced parameter adjustment: temp ${oldTemp} -> ${currentOptions.temperature}, maxTokens ${oldMaxTokens} -> ${currentOptions.maxTokens}`);
+
+          // Add delay before retry
+          console.log(`⏱️ Waiting ${1500 * attempt}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+
+          continue;
+        }
+
+        console.log(`✅ Enhanced attempt ${attempt} successful with ${content.length} characters`);
+        return result;
+
+      } catch (error) {
+        console.error(`❌ Enhanced attempt ${attempt} failed with error:`, error.message);
+        lastError = error;
+
+        // If it's a network/API error and not the last attempt, continue retrying
+        if (attempt < maxRetries) {
+          console.log(`⏱️ Waiting ${1000 * attempt}ms before retry due to error...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          continue;
+        }
+      }
+    }
+
+    // If we get here, all attempts failed
+    if (lastResult) {
+      console.warn('Returning last result despite empty content as all retries exhausted');
+      return lastResult;
+    }
+
+    throw lastError || new Error('All enhanced retry attempts failed');
+  }
+
+  /**
+   * Fallback Requesty call using alternative model when primary model fails
+   * @param {string} prompt - Prompt to send
+   * @param {Object} options - Additional options
+   * @param {Object} provider - Provider configuration
+   * @returns {Promise<Object>} API response
+   */
+  async callRequestyFallback(prompt, options = {}, provider) {
+    console.log('Attempting fallback with alternative model...');
+
+    // Try alternative models in order of preference (Requesty format)
+    const fallbackModels = ['anthropic/claude-3-sonnet-20240229', 'openai/gpt-4', 'google/gemini-pro', 'auto'];
+
+    for (const fallbackModel of fallbackModels) {
+      try {
+        console.log(`Trying fallback model: ${fallbackModel}`);
+        const result = await this.makeRequestyCall(prompt, { ...options, model: fallbackModel }, provider, fallbackModel);
+
+        const content = result.content || '';
+        if (content.trim().length >= 5) { // Lower threshold for fallback success
+          console.log(`Fallback successful with ${fallbackModel} (${content.length} characters)`);
+          result.model = `fallback-${fallbackModel}`;
+          return result;
+        } else {
+          console.log(`Fallback ${fallbackModel} also returned insufficient content (${content.length} chars)`);
+        }
+      } catch (error) {
+        console.warn(`Fallback model ${fallbackModel} failed:`, error.message);
+        continue;
+      }
+    }
+
+    throw new Error('All fallback models failed to generate meaningful content');
   }
 
   /**
